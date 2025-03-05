@@ -63,7 +63,7 @@
         Score: <span id="score">0</span><br>
         Coins: <span id="coins">0</span><br>
         Light Sources: <span id="lightSources">0</span><br>
-        Flashlight: <span id="flashlightMeter">100%</span>
+        Flashlight: <span id="flashlightMeter">25%</span>
     </div>
     <div id="gameOverOverlay">
         <h2>Game Over</h2>
@@ -89,8 +89,9 @@
         const tileSize = 1;
         const wallHeight = 1;
         const playerSize = 0.4;
-        const mazeWidth = 50;
-        const mazeHeight = 100;
+        let mazeWidth = 20; // Starting size
+        let mazeHeight = 20; // Starting size
+        const sizeIncrease = 5; // Increase per level
         let player = { x: tileSize, z: tileSize, speed: 0.05 };
         let goal = { x: 0, z: 0 };
         let maze = [];
@@ -99,12 +100,11 @@
         let score = 0;
         let levelsCompleted = 0;
         let path = [];
-        let flashlightPower = 100; // 0-100%
+        let flashlightPower = 25; // Start at 25%
         const maxFlashlightIntensity = 2.5; // Full power brightness
         const minFlashlightDistance = 1; // Min distance at 0% (1 tile)
         const maxFlashlightDistance = 10; // Max distance at 100% (10 tiles)
-        let flashlightDrainTimer = 3; // Seconds per 1% drain
-        const flashlightDrainInterval = 3; // 1% every 3 seconds
+        const flashlightDrainRate = 1; // 1% per second
         let gameOver = false;
 
         // Three.js setup
@@ -115,7 +115,7 @@
         document.getElementById('gameCanvas').appendChild(renderer.domElement);
 
         // Lighting (only flashlight)
-        const flashlight = new THREE.SpotLight(0xffd700, maxFlashlightIntensity, maxFlashlightDistance, Math.PI / 4, 0.9);
+        const flashlight = new THREE.SpotLight(0xffd700, maxFlashlightIntensity * (flashlightPower / 100), minFlashlightDistance + (maxFlashlightDistance - minFlashlightDistance) * (flashlightPower / 100), Math.PI / 4, 0.9);
         flashlight.position.set(0, 0, 0.2);
         flashlight.target = new THREE.Object3D();
         flashlight.target.position.set(0, 0, -1);
@@ -161,6 +161,52 @@
                 case 'KeyA': moveLeft = false; break;
                 case 'ArrowRight':
                 case 'KeyD': moveRight = false; break;
+            }
+        });
+
+        // Mobile touch controls
+        let touchStartX = null, touchStartY = null;
+        let touchDeltaX = 0, touchDeltaY = 0;
+        let isTouching = false;
+
+        document.addEventListener('touchstart', (e) => {
+            if (!gameOver && e.touches.length === 1) {
+                isTouching = true;
+                moveForward = true;
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                touchDeltaX = 0;
+                touchDeltaY = 0;
+            }
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!gameOver && isTouching && e.touches.length === 1) {
+                const touchX = e.touches[0].clientX;
+                const touchY = e.touches[0].clientY;
+                touchDeltaX = touchX - touchStartX;
+                touchDeltaY = touchY - touchStartY;
+
+                // Turn left/right
+                controls.getObject().rotation.y -= touchDeltaX * 0.005; // Yaw
+
+                // Look up/down
+                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - touchDeltaY * 0.005)); // Pitch
+
+                touchStartX = touchX;
+                touchStartY = touchY;
+            }
+        });
+
+        document.addEventListener('touchend', (e) => {
+            if (!gameOver) {
+                isTouching = false;
+                moveForward = false;
+                // Recenter camera
+                controls.getObject().rotation.y = 0; // Reset yaw
+                camera.rotation.x = 0; // Reset pitch
+                touchDeltaX = 0;
+                touchDeltaY = 0;
             }
         });
 
@@ -232,6 +278,10 @@
 
         // Generate maze with random start and goal
         function generateMaze() {
+            // Update maze size based on level
+            mazeWidth = 20 + sizeIncrease * levelsCompleted;
+            mazeHeight = 20 + sizeIncrease * levelsCompleted;
+
             maze = [];
             for (let z = 0; z < mazeHeight; z++) {
                 let row = [];
@@ -242,6 +292,9 @@
             }
 
             let startX, startZ, goalX, goalZ;
+            const minDistance = Math.min(mazeWidth, mazeHeight) * 0.75; // 75% of smaller dimension
+
+            // Place start
             do {
                 startX = Math.floor(Math.random() * mazeWidth);
                 startZ = Math.floor(Math.random() * mazeHeight);
@@ -250,14 +303,18 @@
             player.x = startX * tileSize;
             player.z = startZ * tileSize;
 
+            // Place goal far from start
             do {
                 do {
                     goalX = Math.floor(Math.random() * mazeWidth);
                     goalZ = Math.floor(Math.random() * mazeHeight);
                 } while (maze[goalZ][goalX] === 1 || (goalX === startX && goalZ === startZ));
-                maze[goalZ][goalX] = 0;
-                path = findPath(startX, startZ, goalX, goalZ);
-            } while (path.length === 0);
+                const distance = Math.sqrt((goalX - startX) ** 2 + (goalZ - startZ) ** 2);
+                if (distance >= minDistance) {
+                    maze[goalZ][goalX] = 0;
+                    path = findPath(startX, startZ, goalX, goalZ);
+                }
+            } while (path.length === 0 || Math.sqrt((goalX - startX) ** 2 + (goalZ - startZ) ** 2) < minDistance);
 
             goal.x = goalX * tileSize;
             goal.z = goalZ * tileSize;
@@ -375,12 +432,11 @@
             moveBackward = false;
             moveLeft = false;
             moveRight = false;
-            flashlightPower = 100;
+            flashlightPower = 25; // Start at 25%
             flashlight.intensity = maxFlashlightIntensity * (flashlightPower / 100);
-            flashlight.distance = maxFlashlightDistance; // Start at max
-            flashlightDrainTimer = flashlightDrainInterval;
+            flashlight.distance = minFlashlightDistance + (maxFlashlightDistance - minFlashlightDistance) * (flashlightPower / 100);
             gameOver = false;
-            console.log('Maze generated - light sources:', lightSources.length);
+            console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Light sources: ${lightSources.length}, Start: (${startX}, ${startZ}), Goal: (${goalX}, ${goalZ})`);
         }
 
         // Collision check function
@@ -457,27 +513,23 @@
                     light.collected = true;
                     scene.remove(light.mesh);
                     if (flashlightPower < 100) {
-                        flashlightPower = Math.min(100, flashlightPower + 20);
-                        flashlightDrainTimer = flashlightDrainInterval;
+                        flashlightPower = Math.min(100, flashlightPower + 10);
                     }
                 }
             });
             lightSources = lightSources.filter(light => !light.collected);
 
-            // Drain flashlight power and update distance
+            // Drain flashlight power
             if (flashlightPower > 0) {
-                flashlightDrainTimer -= 1 / 60; // Assuming 60 FPS
-                if (flashlightDrainTimer <= 0) {
-                    flashlightPower = Math.max(0, flashlightPower - 1);
-                    flashlight.intensity = maxFlashlightIntensity * (flashlightPower / 100);
-                    flashlight.distance = minFlashlightDistance + (maxFlashlightDistance - minFlashlightDistance) * (flashlightPower / 100);
-                    flashlightDrainTimer = flashlightDrainInterval;
-                    if (flashlightPower === 0) {
-                        gameOver = true;
-                        gameOverOverlay.style.display = 'block';
-                        finalScoreSpan.textContent = score;
-                        controls.unlock();
-                    }
+                flashlightPower -= flashlightDrainRate / 60; // 1% per second, assuming 60 FPS
+                flashlightPower = Math.max(0, flashlightPower);
+                flashlight.intensity = maxFlashlightIntensity * (flashlightPower / 100);
+                flashlight.distance = minFlashlightDistance + (maxFlashlightDistance - minFlashlightDistance) * (flashlightPower / 100);
+                if (flashlightPower === 0) {
+                    gameOver = true;
+                    gameOverOverlay.style.display = 'block';
+                    finalScoreSpan.textContent = score;
+                    controls.unlock();
                 }
             }
 
