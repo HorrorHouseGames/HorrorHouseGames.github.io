@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Endless Maze Explorer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 0 auto;
+            touch-action: none;
+        }
+        #minimap {
+            border: 1px solid black;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="320" height="480"></canvas>
+    <canvas id="minimap" width="100" height="200"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
+
+        // Game variables
+        const tileSize = 40;
+        const groundTileSize = tileSize * 4;
+        const playerSize = 20;
+        const mazeWidth = 50;
+        const mazeHeight = 100;
+        let player = { x: tileSize, y: tileSize, speed: 5 };
+        let goal = { x: 0, y: 0 };
+        let maze = [];
+        let coins = [];
+        let score = 0;
+        let levelsCompleted = 0;
+        let target = null;
+        let path = [];
+
+        // A* Pathfinding
+        function findPath(startX, startY, goalX, goalY) {
+            const openSet = [];
+            const closedSet = new Set();
+            const cameFrom = new Map();
+            const gScore = new Map();
+            const fScore = new Map();
+
+            const heuristic = (x1, y1, x2, y2) => Math.abs(x1 - x2) + Math.abs(y1 - y2);
+            const start = `${startX},${startY}`;
+            const end = `${goalX},${goalY}`;
+
+            gScore.set(start, 0);
+            fScore.set(start, heuristic(startX, startY, goalX, goalY));
+            openSet.push({ x: startX, y: startY, f: fScore.get(start) });
+
+            while (openSet.length > 0) {
+                openSet.sort((a, b) => a.f - b.f);
+                const current = openSet.shift();
+                const currentKey = `${current.x},${current.y}`;
+
+                if (currentKey === end) {
+                    const path = [];
+                    let temp = currentKey;
+                    while (cameFrom.has(temp)) {
+                        const [x, y] = temp.split(',').map(Number);
+                        path.push({ x, y });
+                        temp = cameFrom.get(temp);
+                    }
+                    path.push({ x: startX, y: startY });
+                    return path.reverse();
+                }
+
+                closedSet.add(currentKey);
+
+                const neighbors = [
+                    { x: current.x + 1, y: current.y },
+                    { x: current.x - 1, y: current.y },
+                    { x: current.x, y: current.y + 1 },
+                    { x: current.x, y: current.y - 1 }
+                ];
+
+                for (const neighbor of neighbors) {
+                    if (neighbor.x < 0 || neighbor.x >= mazeWidth || neighbor.y < 0 || neighbor.y >= mazeHeight) continue;
+                    if (maze[neighbor.y][neighbor.x] === 1) continue;
+
+                    const neighborKey = `${neighbor.x},${neighbor.y}`;
+                    if (closedSet.has(neighborKey)) continue;
+
+                    const tentativeG = gScore.get(currentKey) + 1;
+
+                    if (!openSet.some(node => node.x === neighbor.x && node.y === neighbor.y)) {
+                        openSet.push({ x: neighbor.x, y: neighbor.y });
+                    } else if (tentativeG >= (gScore.get(neighborKey) || Infinity)) {
+                        continue;
+                    }
+
+                    cameFrom.set(neighborKey, currentKey);
+                    gScore.set(neighborKey, tentativeG);
+                    fScore.set(neighborKey, tentativeG + heuristic(neighbor.x, neighbor.y, goalX, goalY));
+                    openSet.find(n => n.x === neighbor.x && n.y === neighbor.y).f = fScore.get(neighborKey);
+                }
+            }
+            return []; // No path found
+        }
+
+        // Generate maze with random start and goal, ensuring accessibility
+        function generateMaze() {
+            maze = [];
+            for (let y = 0; y < mazeHeight; y++) {
+                let row = [];
+                for (let x = 0; x < mazeWidth; x++) {
+                    row.push(Math.random() > 0.7 ? 1 : 0);
+                }
+                maze.push(row);
+            }
+
+            let startX, startY, goalX, goalY;
+            do {
+                startX = Math.floor(Math.random() * mazeWidth);
+                startY = Math.floor(Math.random() * mazeHeight);
+            } while (maze[startY][startX] === 1);
+            maze[startY][startX] = 0;
+            player.x = startX * tileSize;
+            player.y = startY * tileSize;
+
+            do {
+                do {
+                    goalX = Math.floor(Math.random() * mazeWidth);
+                    goalY = Math.floor(Math.random() * mazeHeight);
+                } while (maze[goalY][goalX] === 1 || (goalX === startX && goalY === startY));
+                maze[goalY][goalX] = 0;
+                path = findPath(startX, startY, goalX, goalY);
+            } while (path.length === 0); // Regenerate goal if no path exists
+
+            goal.x = goalX * tileSize;
+            goal.y = goalY * tileSize;
+
+            coins = [];
+            for (let i = 0; i < 10; i++) {
+                let x, y;
+                do {
+                    x = Math.floor(Math.random() * mazeWidth);
+                    y = Math.floor(Math.random() * mazeHeight);
+                } while (maze[y][x] === 1 || (x === startX && y === startY) || (x === goalX && y === goalY));
+                coins.push({ x: x * tileSize, y: y * tileSize, collected: false });
+            }
+        }
+
+        // Mouse/Touch controls
+        function getCanvasPosition(event) {
+            const rect = canvas.getBoundingClientRect();
+            if (event.touches) {
+                return {
+                    x: event.touches[0].clientX - rect.left,
+                    y: event.touches[0].clientY - rect.top
+                };
+            }
+            return {
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top
+            };
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            target = getCanvasPosition(e);
+        });
+        canvas.addEventListener('mousemove', (e) => {
+            if (target) target = getCanvasPosition(e);
+        });
+        canvas.addEventListener('mouseup', () => {
+            target = null;
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            target = getCanvasPosition(e);
+        });
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (target) target = getCanvasPosition(e);
+        });
+        canvas.addEventListener('touchend', () => {
+            target = null;
+        });
+
+        // Collision check function
+        function canMoveTo(newX, newY) {
+            let playerTileX = Math.floor(newX / tileSize);
+            let playerTileY = Math.floor(newY / tileSize);
+            let playerRight = Math.floor((newX + playerSize - 1) / tileSize);
+            let playerBottom = Math.floor((newY + playerSize - 1) / tileSize);
+
+            if (newX < 0 || newX > mazeWidth * tileSize - playerSize || 
+                newY < 0 || newY > mazeHeight * tileSize - playerSize) {
+                return false;
+            }
+
+            return maze[playerTileY][playerTileX] === 0 && 
+                   maze[playerTileY][playerRight] === 0 &&
+                   maze[playerBottom][playerTileX] === 0 &&
+                   maze[playerBottom][playerRight] === 0;
+        }
+
+        // Update game state
+        function update() {
+            if (target) {
+                let cameraX = player.x - canvas.width / 2;
+                let cameraY = player.y - canvas.height / 2;
+                if (cameraX < 0) cameraX = 0;
+                if (cameraY < 0) cameraY = 0;
+                if (cameraX > mazeWidth * tileSize - canvas.width) cameraX = mazeWidth * tileSize - canvas.width;
+                if (cameraY > mazeHeight * tileSize - canvas.height) cameraY = mazeHeight * tileSize - canvas.height;
+
+                const targetWorldX = target.x + cameraX;
+                const targetWorldY = target.y + cameraY;
+
+                const dx = targetWorldX - (player.x + playerSize / 2);
+                const dy = targetWorldY - (player.y + playerSize / 2);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > 10) {
+                    const angle = Math.atan2(dy, dx);
+                    const moveX = Math.cos(angle) * player.speed;
+                    const moveY = Math.sin(angle) * player.speed;
+
+                    let newX = player.x + moveX;
+                    let newY = player.y;
+                    if (canMoveTo(newX, newY)) {
+                        player.x = newX;
+                    }
+
+                    newX = player.x;
+                    newY = player.y + moveY;
+                    if (canMoveTo(newX, newY)) {
+                        player.y = newY;
+                    }
+                }
+            }
+
+            coins.forEach((coin, index) => {
+                if (!coin.collected &&
+                    player.x < coin.x + tileSize &&
+                    player.x + playerSize > coin.x &&
+                    player.y < coin.y + tileSize &&
+                    player.y + playerSize > coin.y) {
+                    coin.collected = true;
+                    score += 10 * (levelsCompleted + 1);
+                }
+            });
+            coins = coins.filter(coin => !coin.collected);
+
+            let playerTileX = Math.floor(player.x / tileSize);
+            let playerTileY = Math.floor(player.y / tileSize);
+            let goalTileX = Math.floor(goal.x / tileSize);
+            let goalTileY = Math.floor(goal.y / tileSize);
+            if (playerTileX === goalTileX && playerTileY === goalTileY) {
+                levelsCompleted++;
+                score += 50 * levelsCompleted;
+                alert(`Level ${levelsCompleted} Completed! Total Score: ${score}`);
+                generateMaze();
+            }
+        }
+
+        // Reset game
+        function resetGame() {
+            player.x = tileSize;
+            player.y = tileSize;
+            maze = [];
+            coins = [];
+            score = 0;
+            levelsCompleted = 0;
+            target = null;
+            generateMaze();
+        }
+
+        // Draw main game
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            let cameraX = player.x - canvas.width / 2;
+            let cameraY = player.y - canvas.height / 2;
+            if (cameraX < 0) cameraX = 0;
+            if (cameraY < 0) cameraY = 0;
+            if (cameraX > mazeWidth * tileSize - canvas.width) cameraX = mazeWidth * tileSize - canvas.width;
+            if (cameraY > mazeHeight * tileSize - canvas.height) cameraY = mazeHeight * tileSize - canvas.height;
+
+            ctx.save();
+            ctx.translate(-cameraX, -cameraY);
+
+            ctx.fillStyle = '#d3d3d3';
+            for (let y = 0; y < mazeHeight; y += 4) {
+                for (let x = 0; x < mazeWidth; x += 4) {
+                    if (maze[y][x] === 0) {
+                        ctx.fillRect(x * tileSize, y * tileSize, groundTileSize, groundTileSize);
+                    }
+                }
+            }
+
+            ctx.fillStyle = 'green';
+            path.forEach(p => {
+                ctx.fillRect(p.x * tileSize, p.y * tileSize, tileSize, tileSize);
+            });
+
+            ctx.fillStyle = 'gray';
+            for (let y = 0; y < mazeHeight; y++) {
+                for (let x = 0; x < mazeWidth; x++) {
+                    if (maze[y][x] === 1) {
+                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    }
+                }
+            }
+
+            ctx.fillStyle = 'yellow';
+            coins.forEach(coin => {
+                if (!coin.collected) {
+                    ctx.beginPath();
+                    ctx.arc(coin.x + tileSize / 2, coin.y + tileSize / 2, tileSize / 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(goal.x, goal.y, tileSize, tileSize);
+
+            ctx.fillStyle = 'red';
+            ctx.fillRect(player.x, player.y, playerSize, playerSize);
+
+            ctx.restore();
+
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Score: ${score} | Level: ${levelsCompleted + 1} | Coins: ${coins.length}`, 10, 30);
+        }
+
+        // Draw minimap
+        function drawMinimap() {
+            const miniTileWidth = minimapCanvas.width / mazeWidth;
+            const miniTileHeight = minimapCanvas.height / mazeHeight;
+
+            minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+
+            minimapCtx.fillStyle = 'green';
+            path.forEach(p => {
+                minimapCtx.fillRect(p.x * miniTileWidth, p.y * miniTileHeight, miniTileWidth, miniTileHeight);
+            });
+
+            minimapCtx.fillStyle = 'gray';
+            for (let y = 0; y < mazeHeight; y++) {
+                for (let x = 0; x < mazeWidth; x++) {
+                    if (maze[y][x] === 1) {
+                        minimapCtx.fillRect(x * miniTileWidth, y * miniTileHeight, miniTileWidth, miniTileHeight);
+                    }
+                }
+            }
+
+            minimapCtx.fillStyle = 'yellow';
+            coins.forEach(coin => {
+                if (!coin.collected) {
+                    minimapCtx.fillRect(
+                        (coin.x / tileSize) * miniTileWidth,
+                        (coin.y / tileSize) * miniTileHeight,
+                        miniTileWidth,
+                        miniTileHeight
+                    );
+                }
+            });
+
+            minimapCtx.fillStyle = 'blue';
+            minimapCtx.fillRect(
+                (goal.x / tileSize) * miniTileWidth,
+                (goal.y / tileSize) * miniTileHeight,
+                miniTileWidth,
+                miniTileHeight
+            );
+
+            minimapCtx.fillStyle = 'red';
+            minimapCtx.fillRect(
+                (player.x / tileSize) * miniTileWidth,
+                (player.y / tileSize) * miniTileHeight,
+                miniTileWidth,
+                miniTileHeight
+            );
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            drawMinimap();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game
+        generateMaze();
+        gameLoop();
+    </script>
+</body>
+</html>

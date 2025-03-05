@@ -1,163 +1,230 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Endless Maze Explorer</title>
+    <title>Endless Maze Explorer 3D</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        canvas {
-            border: 1px solid black;
-            display: block;
-            margin: 0 auto;
-            touch-action: none;
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #gameCanvas {
+            width: 100%;
+            height: 100vh;
         }
         #minimap {
             border: 1px solid black;
             position: absolute;
             top: 10px;
             right: 10px;
+            width: 100px;
+            height: 200px;
         }
-        #resultsOverlay {
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #gameOverOverlay {
             display: none;
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 300px;
-            padding: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.9);
             color: white;
-            font-family: Arial, sans-serif;
+            padding: 20px;
             text-align: center;
-            z-index: 10;
+            border-radius: 10px;
         }
-        #resultsOverlay button {
+        #gameOverOverlay button {
             padding: 10px 20px;
-            font-size: 18px;
+            font-size: 16px;
             margin-top: 20px;
             cursor: pointer;
-            background-color: #4CAF50;
+            background-color: #ff4444;
             color: white;
             border: none;
             border-radius: 5px;
         }
-        #resultsOverlay button:hover {
-            background-color: #45a049;
-        }
-        #testMoveButton {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            padding: 5px 10px;
-            background-color: #ff9800;
-            color: white;
-            border: none;
-            cursor: pointer;
+        #gameOverOverlay button:hover {
+            background-color: #cc3333;
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/controls/PointerLockControls.js"></script>
 </head>
 <body>
-    <canvas id="gameCanvas" width="320" height="480" tabindex="0"></canvas>
-    <canvas id="minimap" width="100" height="200"></canvas>
-    <div id="resultsOverlay">
-        <h2>Level <span id="levelNumber"></span> Completed!</h2>
-        <p>Coins Collected: <span id="coinPoints"></span> points</p>
-        <p>Level Bonus: <span id="levelBonus"></span> points</p>
-        <p>Total Score: <span id="totalScore"></span></p>
-        <button id="nextLevelButton">Next Level</button>
+    <canvas id="minimap"></canvas>
+    <div id="gameCanvas"></div>
+    <div id="hud">
+        Level: <span id="level">1</span><br>
+        Score: <span id="score">0</span><br>
+        Coins: <span id="coins">0</span><br>
+        Light Sources: <span id="lightSources">0</span><br>
+        Flashlight: <span id="flashlightMeter">100%</span>
     </div>
-    <button id="testMoveButton">Test Move</button>
+    <div id="gameOverOverlay">
+        <h2>Game Over</h2>
+        <p>Your flashlight ran out of power!</p>
+        <p>Final Score: <span id="finalScore">0</span></p>
+        <button onclick="resetGame()">Restart</button>
+    </div>
 
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
         const minimapCanvas = document.getElementById('minimap');
         const minimapCtx = minimapCanvas.getContext('2d');
-        const resultsOverlay = document.getElementById('resultsOverlay');
-        const levelNumberSpan = document.getElementById('levelNumber');
-        const coinPointsSpan = document.getElementById('coinPoints');
-        const levelBonusSpan = document.getElementById('levelBonus');
-        const totalScoreSpan = document.getElementById('totalScore');
-        const nextLevelButton = document.getElementById('nextLevelButton');
-        const testMoveButton = document.getElementById('testMoveButton');
+        const hud = {
+            level: document.getElementById('level'),
+            score: document.getElementById('score'),
+            coins: document.getElementById('coins'),
+            lightSources: document.getElementById('lightSources'),
+            flashlightMeter: document.getElementById('flashlightMeter')
+        };
+        const gameOverOverlay = document.getElementById('gameOverOverlay');
+        const finalScoreSpan = document.getElementById('finalScore');
 
         // Game variables
-        const tileSize = 40;
-        const groundTileSize = tileSize * 4;
-        const playerSize = 20;
+        const tileSize = 1;
+        const wallHeight = 1;
+        const playerSize = 0.4;
         const mazeWidth = 50;
         const mazeHeight = 100;
-        let player = { x: tileSize, y: tileSize, speed: 5 };
-        let goal = { x: 0, y: 0 };
+        let player = { x: tileSize, z: tileSize, speed: 0.05 };
+        let goal = { x: 0, z: 0 };
         let maze = [];
         let coins = [];
+        let lightSources = [];
         let score = 0;
         let levelsCompleted = 0;
-        let target = null;
         let path = [];
-        let coinsCollectedThisLevel = 0;
+        let flashlightPower = 100; // 0-100%
+        const maxFlashlightIntensity = 2.5; // Full power brightness
+        const minFlashlightDistance = 1; // Min distance at 0% (1 tile)
+        const maxFlashlightDistance = 10; // Max distance at 100% (10 tiles)
+        let flashlightDrainTimer = 3; // Seconds per 1% drain
+        const flashlightDrainInterval = 3; // 1% every 3 seconds
+        let gameOver = false;
+
+        // Three.js setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('gameCanvas').appendChild(renderer.domElement);
+
+        // Lighting (only flashlight)
+        const flashlight = new THREE.SpotLight(0xffd700, maxFlashlightIntensity, maxFlashlightDistance, Math.PI / 4, 0.9);
+        flashlight.position.set(0, 0, 0.2);
+        flashlight.target = new THREE.Object3D();
+        flashlight.target.position.set(0, 0, -1);
+        camera.add(flashlight);
+        camera.add(flashlight.target);
+        scene.add(camera);
+        console.log('Flashlight initialized:', flashlight);
+
+        // Debug: Small sphere to visualize flashlight position
+        const debugSphereGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+        const debugSphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const debugSphere = new THREE.Mesh(debugSphereGeometry, debugSphereMaterial);
+        debugSphere.position.copy(flashlight.position);
+        camera.add(debugSphere);
+
+        // PointerLockControls for first-person movement
+        const controls = new THREE.PointerLockControls(camera, renderer.domElement);
+        document.addEventListener('click', () => controls.lock());
+
+        // Movement controls (WASD and Arrow keys)
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        document.addEventListener('keydown', (e) => {
+            if (!gameOver) {
+                switch (e.code) {
+                    case 'ArrowUp':
+                    case 'KeyW': moveForward = true; break;
+                    case 'ArrowDown':
+                    case 'KeyS': moveBackward = true; break;
+                    case 'ArrowLeft':
+                    case 'KeyA': moveLeft = true; break;
+                    case 'ArrowRight':
+                    case 'KeyD': moveRight = true; break;
+                }
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            switch (e.code) {
+                case 'ArrowUp':
+                case 'KeyW': moveForward = false; break;
+                case 'ArrowDown':
+                case 'KeyS': moveBackward = false; break;
+                case 'ArrowLeft':
+                case 'KeyA': moveLeft = false; break;
+                case 'ArrowRight':
+                case 'KeyD': moveRight = false; break;
+            }
+        });
 
         // A* Pathfinding
-        function findPath(startX, startY, goalX, goalY) {
+        function findPath(startX, startZ, goalX, goalZ) {
             const openSet = [];
             const closedSet = new Set();
             const cameFrom = new Map();
             const gScore = new Map();
             const fScore = new Map();
 
-            const heuristic = (x1, y1, x2, y2) => Math.abs(x1 - x2) + Math.abs(y1 - y2);
-            const start = `${startX},${startY}`;
-            const end = `${goalX},${goalY}`;
+            const heuristic = (x1, z1, x2, z2) => Math.abs(x1 - x2) + Math.abs(z1 - z2);
+            const start = `${startX},${startZ}`;
+            const end = `${goalX},${goalZ}`;
 
             gScore.set(start, 0);
-            fScore.set(start, heuristic(startX, startY, goalX, goalY));
-            openSet.push({ x: startX, y: startY, f: fScore.get(start) });
+            fScore.set(start, heuristic(startX, startZ, goalX, goalZ));
+            openSet.push({ x: startX, z: startZ, f: fScore.get(start) });
 
             while (openSet.length > 0) {
                 openSet.sort((a, b) => a.f - b.f);
                 const current = openSet.shift();
-                const currentKey = `${current.x},${current.y}`;
+                const currentKey = `${current.x},${current.z}`;
 
                 if (currentKey === end) {
                     const path = [];
                     let temp = currentKey;
                     while (cameFrom.has(temp)) {
-                        const [x, y] = temp.split(',').map(Number);
-                        path.push({ x, y });
+                        const [x, z] = temp.split(',').map(Number);
+                        path.push({ x, z });
                         temp = cameFrom.get(temp);
                     }
-                    path.push({ x: startX, y: startY });
+                    path.push({ x: startX, z: startZ });
                     return path.reverse();
                 }
 
                 closedSet.add(currentKey);
 
                 const neighbors = [
-                    { x: current.x + 1, y: current.y },
-                    { x: current.x - 1, y: current.y },
-                    { x: current.x, y: current.y + 1 },
-                    { x: current.x, y: current.y - 1 }
+                    { x: current.x + 1, z: current.z },
+                    { x: current.x - 1, z: current.z },
+                    { x: current.x, z: current.z + 1 },
+                    { x: current.x, z: current.z - 1 }
                 ];
 
                 for (const neighbor of neighbors) {
-                    if (neighbor.x < 0 || neighbor.x >= mazeWidth || neighbor.y < 0 || neighbor.y >= mazeHeight) continue;
-                    if (maze[neighbor.y][neighbor.x] === 1) continue;
+                    if (neighbor.x < 0 || neighbor.x >= mazeWidth || neighbor.z < 0 || neighbor.z >= mazeHeight) continue;
+                    if (maze[neighbor.z][neighbor.x] === 1) continue;
 
-                    const neighborKey = `${neighbor.x},${neighbor.y}`;
+                    const neighborKey = `${neighbor.x},${neighbor.z}`;
                     if (closedSet.has(neighborKey)) continue;
 
                     const tentativeG = gScore.get(currentKey) + 1;
 
-                    if (!openSet.some(node => node.x === neighbor.x && node.y === neighbor.y)) {
-                        openSet.push({ x: neighbor.x, y: neighbor.y });
+                    if (!openSet.some(node => node.x === neighbor.x && node.z === neighbor.z)) {
+                        openSet.push({ x: neighbor.x, z: neighbor.z });
                     } else if (tentativeG >= (gScore.get(neighborKey) || Infinity)) {
                         continue;
                     }
 
                     cameFrom.set(neighborKey, currentKey);
                     gScore.set(neighborKey, tentativeG);
-                    fScore.set(neighborKey, tentativeG + heuristic(neighbor.x, neighbor.y, goalX, goalY));
-                    openSet.find(n => n.x === neighbor.x && n.y === neighbor.y).f = fScore.get(neighborKey);
+                    fScore.set(neighborKey, tentativeG + heuristic(neighbor.x, neighbor.z, goalX, goalZ));
+                    openSet.find(n => n.x === neighbor.x && n.z === neighbor.z).f = fScore.get(neighborKey);
                 }
             }
             return [];
@@ -166,7 +233,7 @@
         // Generate maze with random start and goal
         function generateMaze() {
             maze = [];
-            for (let y = 0; y < mazeHeight; y++) {
+            for (let z = 0; z < mazeHeight; z++) {
                 let row = [];
                 for (let x = 0; x < mazeWidth; x++) {
                     row.push(Math.random() > 0.7 ? 1 : 0);
@@ -174,282 +241,253 @@
                 maze.push(row);
             }
 
-            let startX, startY, goalX, goalY;
+            let startX, startZ, goalX, goalZ;
             do {
                 startX = Math.floor(Math.random() * mazeWidth);
-                startY = Math.floor(Math.random() * mazeHeight);
-            } while (maze[startY][startX] === 1);
-            maze[startY][startX] = 0;
+                startZ = Math.floor(Math.random() * mazeHeight);
+            } while (maze[startZ][startX] === 1);
+            maze[startZ][startX] = 0;
             player.x = startX * tileSize;
-            player.y = startY * tileSize;
+            player.z = startZ * tileSize;
 
             do {
-                goalX = Math.floor(Math.random() * mazeWidth);
-                goalY = Math.floor(Math.random() * mazeHeight);
-            } while (maze[goalY][goalX] === 1 || (goalX === startX && goalY === startY));
-            maze[goalY][goalX] = 0;
+                do {
+                    goalX = Math.floor(Math.random() * mazeWidth);
+                    goalZ = Math.floor(Math.random() * mazeHeight);
+                } while (maze[goalZ][goalX] === 1 || (goalX === startX && goalZ === startZ));
+                maze[goalZ][goalX] = 0;
+                path = findPath(startX, startZ, goalX, goalZ);
+            } while (path.length === 0);
+
             goal.x = goalX * tileSize;
-            goal.y = goalY * tileSize;
+            goal.z = goalZ * tileSize;
 
             coins = [];
             for (let i = 0; i < 10; i++) {
-                let x, y;
+                let x, z;
                 do {
                     x = Math.floor(Math.random() * mazeWidth);
-                    y = Math.floor(Math.random() * mazeHeight);
-                } while (maze[y][x] === 1 || (x === startX && y === startY) || (x === goalX && y === goalY));
-                coins.push({ x: x * tileSize, y: y * tileSize, collected: false });
+                    z = Math.floor(Math.random() * mazeHeight);
+                } while (maze[z][x] === 1 || (x === startX && z === startZ) || (x === goalX && z === goalZ));
+                coins.push({ x: x * tileSize, z: z * tileSize, collected: false });
             }
 
-            path = findPath(startX, startY, goalX, goalY);
-            coinsCollectedThisLevel = 0;
-            target = null;
-            console.log('Maze generated - player at:', player, 'target:', target);
+            // Spawn light sources along the path
+            lightSources = [];
+            const pathStep = Math.max(5, Math.floor(path.length / 5)); // One every ~5-10 tiles, max 5
+            for (let i = 0; i < path.length; i += pathStep) {
+                if (i > 0 && i < path.length - 1) {
+                    const p = path[i];
+                    lightSources.push({ x: p.x * tileSize, z: p.z * tileSize, collected: false });
+                }
+            }
+
+            // Clear previous scene except camera
+            while (scene.children.length > 1) {
+                scene.remove(scene.children[1]);
+            }
+
+            // Add ground
+            const groundGeometry = new THREE.PlaneGeometry(mazeWidth * tileSize, mazeHeight * tileSize);
+            const groundMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x555555, 
+                specular: 0x111111, 
+                shininess: 5 
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.set(mazeWidth * tileSize / 2, 0, mazeHeight * tileSize / 2);
+            scene.add(ground);
+
+            // Add walls
+            const wallGeometry = new THREE.BoxGeometry(tileSize, wallHeight, tileSize);
+            const wallMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x333333, 
+                specular: 0x111111, 
+                shininess: 5 
+            });
+            for (let z = 0; z < mazeHeight; z++) {
+                for (let x = 0; x < mazeWidth; x++) {
+                    if (maze[z][x] === 1) {
+                        const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                        wall.position.set(x * tileSize + tileSize / 2, wallHeight / 2, z * tileSize + tileSize / 2);
+                        scene.add(wall);
+                    }
+                }
+            }
+
+            // Add path
+            const pathGeometry = new THREE.BoxGeometry(tileSize * 0.8, 0.01, tileSize * 0.8);
+            const pathMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x00ff00, 
+                specular: 0x111111, 
+                shininess: 5 
+            });
+            path.forEach(p => {
+                const pathTile = new THREE.Mesh(pathGeometry, pathMaterial);
+                pathTile.position.set(p.x * tileSize + tileSize / 2, 0.01, p.z * tileSize + tileSize / 2);
+                scene.add(pathTile);
+            });
+
+            // Add coins
+            const coinGeometry = new THREE.SphereGeometry(tileSize / 4, 32, 32);
+            const coinMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xffff00, 
+                specular: 0x111111, 
+                shininess: 5 
+            });
+            coins.forEach(coin => {
+                const coinMesh = new THREE.Mesh(coinGeometry, coinMaterial);
+                coinMesh.position.set(coin.x + tileSize / 2, tileSize / 4, coin.z + tileSize / 2);
+                coin.mesh = coinMesh;
+                scene.add(coinMesh);
+            });
+
+            // Add light sources
+            const lightSourceGeometry = new THREE.SphereGeometry(tileSize / 6, 16, 16);
+            const lightSourceMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xffa500, 
+                specular: 0x111111, 
+                shininess: 5 
+            });
+            lightSources.forEach(light => {
+                const lightMesh = new THREE.Mesh(lightSourceGeometry, lightSourceMaterial);
+                lightMesh.position.set(light.x + tileSize / 2, tileSize / 4, light.z + tileSize / 2);
+                light.mesh = lightMesh;
+                scene.add(lightMesh);
+            });
+
+            // Add goal
+            const goalGeometry = new THREE.BoxGeometry(tileSize, tileSize, tileSize);
+            const goalMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x0000ff, 
+                specular: 0x111111, 
+                shininess: 5 
+            });
+            const goalMesh = new THREE.Mesh(goalGeometry, goalMaterial);
+            goalMesh.position.set(goal.x + tileSize / 2, tileSize / 2, goal.z + tileSize / 2);
+            goal.mesh = goalMesh;
+            scene.add(goalMesh);
+
+            // Set initial camera position and reset game state
+            camera.position.set(player.x + playerSize / 2, tileSize / 2, player.z + playerSize / 2);
+            moveForward = false;
+            moveBackward = false;
+            moveLeft = false;
+            moveRight = false;
+            flashlightPower = 100;
+            flashlight.intensity = maxFlashlightIntensity * (flashlightPower / 100);
+            flashlight.distance = maxFlashlightDistance; // Start at max
+            flashlightDrainTimer = flashlightDrainInterval;
+            gameOver = false;
+            console.log('Maze generated - light sources:', lightSources.length);
         }
-
-        // Mouse/Touch controls
-        function getCanvasPosition(event) {
-            const rect = canvas.getBoundingClientRect();
-            const pos = event.touches ? {
-                x: event.touches[0].clientX - rect.left,
-                y: event.touches[0].clientY - rect.top
-            } : {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
-            };
-            console.log('Calculated position:', pos);
-            return pos;
-        }
-
-        // Bind events with logging
-        canvas.addEventListener('mousedown', (e) => {
-            if (resultsOverlay.style.display === 'none') {
-                target = getCanvasPosition(e);
-                console.log('mousedown - target set to:', target);
-            } else {
-                console.log('mousedown blocked - overlay visible');
-            }
-        });
-        canvas.addEventListener('mousemove', (e) => {
-            if (target && resultsOverlay.style.display === 'none') {
-                target = getCanvasPosition(e);
-                console.log('mousemove - target updated to:', target);
-            }
-        });
-        canvas.addEventListener('mouseup', () => {
-            target = null;
-            console.log('mouseup - target cleared');
-        });
-
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            if (resultsOverlay.style.display === 'none') {
-                target = getCanvasPosition(e);
-                console.log('touchstart - target set to:', target);
-            } else {
-                console.log('touchstart blocked - overlay visible');
-            }
-        });
-        canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (target && resultsOverlay.style.display === 'none') {
-                target = getCanvasPosition(e);
-                console.log('touchmove - target updated to:', target);
-            }
-        });
-        canvas.addEventListener('touchend', () => {
-            target = null;
-            console.log('touchend - target cleared');
-        });
-
-        // Test movement button
-        testMoveButton.addEventListener('click', () => {
-            target = { x: player.x + 100, y: player.y + 100 };
-            console.log('Test Move clicked - target set to:', target);
-        });
 
         // Collision check function
-        function canMoveTo(newX, newY) {
-            let playerTileX = Math.floor(newX / tileSize);
-            let playerTileY = Math.floor(newY / tileSize);
-            let playerRight = Math.floor((newX + playerSize - 1) / tileSize);
-            let playerBottom = Math.floor((newY + playerSize - 1) / tileSize);
+        function canMoveTo(newX, newZ) {
+            const playerTileX = Math.floor(newX / tileSize);
+            const playerTileZ = Math.floor(newZ / tileSize);
+            const playerRight = Math.floor((newX + playerSize) / tileSize);
+            const playerBottom = Math.floor((newZ + playerSize) / tileSize);
 
-            if (newX < 0 || newX > mazeWidth * tileSize - playerSize || 
-                newY < 0 || newY > mazeHeight * tileSize - playerSize) {
+            if (newX < 0 || newX + playerSize > mazeWidth * tileSize || 
+                newZ < 0 || newZ + playerSize > mazeHeight * tileSize) {
                 return false;
             }
 
-            const canMove = maze[playerTileY][playerTileX] === 0 && 
-                            maze[playerTileY][playerRight] === 0 &&
-                            maze[playerBottom][playerTileX] === 0 &&
-                            maze[playerBottom][playerRight] === 0;
-            console.log('canMoveTo:', newX, newY, 'result:', canMove);
-            return canMove;
-        }
-
-        // Show results overlay
-        function showResults() {
-            const coinPoints = coinsCollectedThisLevel * 10 * (levelsCompleted);
-            const levelBonus = 50 * levelsCompleted;
-            levelNumberSpan.textContent = levelsCompleted;
-            coinPointsSpan.textContent = coinPoints;
-            levelBonusSpan.textContent = levelBonus;
-            totalScoreSpan.textContent = score;
-            resultsOverlay.style.display = 'block';
-            target = null;
-            console.log('Results shown - target cleared');
+            return maze[playerTileZ][playerTileX] === 0 && 
+                   maze[playerTileZ][playerRight] === 0 &&
+                   maze[playerBottom][playerTileX] === 0 &&
+                   maze[playerBottom][playerRight] === 0;
         }
 
         // Update game state
         function update() {
-            if (resultsOverlay.style.display === 'block') {
-                console.log('Update paused - overlay visible');
-                return;
+            if (gameOver) return;
+
+            const velocity = new THREE.Vector3();
+            if (moveForward || moveBackward || moveLeft || moveRight) {
+                const direction = new THREE.Vector3();
+                camera.getWorldDirection(direction);
+                direction.y = 0;
+                direction.normalize();
+
+                if (moveForward) velocity.add(direction.clone().multiplyScalar(player.speed));
+                if (moveBackward) velocity.sub(direction.clone().multiplyScalar(player.speed));
+                const right = new THREE.Vector3();
+                right.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
+                if (moveLeft) velocity.sub(right.clone().multiplyScalar(player.speed));
+                if (moveRight) velocity.add(right.clone().multiplyScalar(player.speed));
             }
 
-            if (target) {
-                console.log('Updating with target:', target, 'player at:', player.x, player.y);
-                let cameraX = player.x - canvas.width / 2;
-                let cameraY = player.y - canvas.height / 2;
-                if (cameraX < 0) cameraX = 0;
-                if (cameraY < 0) cameraY = 0;
-                if (cameraX > mazeWidth * tileSize - canvas.width) cameraX = mazeWidth * tileSize - canvas.width;
-                if (cameraY > mazeHeight * tileSize - canvas.height) cameraY = mazeHeight * tileSize - canvas.height;
+            if (velocity.length() > 0) {
+                const moveX = velocity.x;
+                const moveZ = velocity.z;
 
-                const targetWorldX = target.x + cameraX;
-                const targetWorldY = target.y + cameraY;
+                let newX = player.x + moveX;
+                let newZ = player.z;
+                if (canMoveTo(newX, newZ)) player.x = newX;
 
-                const dx = targetWorldX - (player.x + playerSize / 2);
-                const dy = targetWorldY - (player.y + playerSize / 2);
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                console.log('Distance to target:', distance);
+                newX = player.x;
+                newZ = player.z + moveZ;
+                if (canMoveTo(newX, newZ)) player.z = newZ;
 
-                if (distance > 10) {
-                    const angle = Math.atan2(dy, dx);
-                    const moveX = Math.cos(angle) * player.speed;
-                    const moveY = Math.sin(angle) * player.speed;
-
-                    let newX = player.x + moveX;
-                    let newY = player.y;
-                    if (canMoveTo(newX, newY)) {
-                        player.x = newX;
-                        console.log('Moved X to:', player.x);
-                    } else {
-                        console.log('X movement blocked at:', newX, newY);
-                    }
-
-                    newX = player.x;
-                    newY = player.y + moveY;
-                    if (canMoveTo(newX, newY)) {
-                        player.y = newY;
-                        console.log('Moved Y to:', player.y);
-                    } else {
-                        console.log('Y movement blocked at:', newX, newY);
-                    }
-                } else {
-                    console.log('Distance too small:', distance);
-                }
-            } else {
-                console.log('No target set');
+                controls.getObject().position.set(player.x + playerSize / 2, tileSize / 2, player.z + playerSize / 2);
             }
 
+            // Collect coins
+            let coinsCollected = coins.filter(c => !c.collected).length;
             coins.forEach((coin, index) => {
                 if (!coin.collected &&
-                    player.x < coin.x + tileSize &&
-                    player.x + playerSize > coin.x &&
-                    player.y < coin.y + tileSize &&
-                    player.y + playerSize > coin.y) {
+                    Math.abs(player.x - coin.x) < tileSize &&
+                    Math.abs(player.z - coin.z) < tileSize) {
                     coin.collected = true;
-                    coinsCollectedThisLevel++;
                     score += 10 * (levelsCompleted + 1);
-                    console.log('Coin collected - score:', score);
+                    scene.remove(coin.mesh);
                 }
             });
             coins = coins.filter(coin => !coin.collected);
 
-            let playerTileX = Math.floor(player.x / tileSize);
-            let playerTileY = Math.floor(player.y / tileSize);
-            let goalTileX = Math.floor(goal.x / tileSize);
-            let goalTileY = Math.floor(goal.y / tileSize);
-            if (playerTileX === goalTileX && playerTileY === goalTileY) {
+            // Collect light sources
+            let lightSourcesCollected = lightSources.filter(l => !l.collected).length;
+            lightSources.forEach((light, index) => {
+                if (!light.collected &&
+                    Math.abs(player.x - light.x) < tileSize &&
+                    Math.abs(player.z - light.z) < tileSize) {
+                    light.collected = true;
+                    scene.remove(light.mesh);
+                    if (flashlightPower < 100) {
+                        flashlightPower = Math.min(100, flashlightPower + 20);
+                        flashlightDrainTimer = flashlightDrainInterval;
+                    }
+                }
+            });
+            lightSources = lightSources.filter(light => !light.collected);
+
+            // Drain flashlight power and update distance
+            if (flashlightPower > 0) {
+                flashlightDrainTimer -= 1 / 60; // Assuming 60 FPS
+                if (flashlightDrainTimer <= 0) {
+                    flashlightPower = Math.max(0, flashlightPower - 1);
+                    flashlight.intensity = maxFlashlightIntensity * (flashlightPower / 100);
+                    flashlight.distance = minFlashlightDistance + (maxFlashlightDistance - minFlashlightDistance) * (flashlightPower / 100);
+                    flashlightDrainTimer = flashlightDrainInterval;
+                    if (flashlightPower === 0) {
+                        gameOver = true;
+                        gameOverOverlay.style.display = 'block';
+                        finalScoreSpan.textContent = score;
+                        controls.unlock();
+                    }
+                }
+            }
+
+            // Check goal
+            if (Math.abs(player.x - goal.x) < tileSize && Math.abs(player.z - goal.z) < tileSize) {
                 levelsCompleted++;
-                const levelBonus = 50 * levelsCompleted;
-                score += levelBonus;
-                showResults();
+                score += 50 * levelsCompleted;
+                alert(`Level ${levelsCompleted} Completed! Total Score: ${score}`);
+                generateMaze();
             }
-        }
-
-        // Reset game
-        function resetGame() {
-            player.x = tileSize;
-            player.y = tileSize;
-            maze = [];
-            coins = [];
-            score = 0;
-            levelsCompleted = 0;
-            target = null;
-            coinsCollectedThisLevel = 0;
-            generateMaze();
-        }
-
-        // Draw main game
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            let cameraX = player.x - canvas.width / 2;
-            let cameraY = player.y - canvas.height / 2;
-            if (cameraX < 0) cameraX = 0;
-            if (cameraY < 0) cameraY = 0;
-            if (cameraX > mazeWidth * tileSize - canvas.width) cameraX = mazeWidth * tileSize - canvas.width;
-            if (cameraY > mazeHeight * tileSize - canvas.height) cameraY = mazeHeight * tileSize - canvas.height;
-
-            ctx.save();
-            ctx.translate(-cameraX, -cameraY);
-
-            ctx.fillStyle = '#d3d3d3';
-            for (let y = 0; y < mazeHeight; y += 4) {
-                for (let x = 0; x < mazeWidth; x += 4) {
-                    if (maze[y][x] === 0) {
-                        ctx.fillRect(x * tileSize, y * tileSize, groundTileSize, groundTileSize);
-                    }
-                }
-            }
-
-            ctx.fillStyle = 'green';
-            path.forEach(p => {
-                ctx.fillRect(p.x * tileSize, p.y * tileSize, tileSize, tileSize);
-            });
-
-            ctx.fillStyle = 'gray';
-            for (let y = 0; y < mazeHeight; y++) {
-                for (let x = 0; x < mazeWidth; x++) {
-                    if (maze[y][x] === 1) {
-                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-                    }
-                }
-            }
-
-            ctx.fillStyle = 'yellow';
-            coins.forEach(coin => {
-                if (!coin.collected) {
-                    ctx.beginPath();
-                    ctx.arc(coin.x + tileSize / 2, coin.y + tileSize / 2, tileSize / 4, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            });
-
-            ctx.fillStyle = 'blue';
-            ctx.fillRect(goal.x, goal.y, tileSize, tileSize);
-
-            ctx.fillStyle = 'red';
-            ctx.fillRect(player.x, player.y, playerSize, playerSize);
-
-            ctx.restore();
-
-            ctx.fillStyle = 'black';
-            ctx.font = '20px Arial';
-            ctx.fillText(`Score: ${score} | Level: ${levelsCompleted + 1} | Coins: ${coins.length}`, 10, 30);
         }
 
         // Draw minimap
@@ -461,14 +499,14 @@
 
             minimapCtx.fillStyle = 'green';
             path.forEach(p => {
-                minimapCtx.fillRect(p.x * miniTileWidth, p.y * miniTileHeight, miniTileWidth, miniTileHeight);
+                minimapCtx.fillRect(p.x * miniTileWidth, p.z * miniTileHeight, miniTileWidth, miniTileHeight);
             });
 
             minimapCtx.fillStyle = 'gray';
-            for (let y = 0; y < mazeHeight; y++) {
+            for (let z = 0; z < mazeHeight; z++) {
                 for (let x = 0; x < mazeWidth; x++) {
-                    if (maze[y][x] === 1) {
-                        minimapCtx.fillRect(x * miniTileWidth, y * miniTileHeight, miniTileWidth, miniTileHeight);
+                    if (maze[z][x] === 1) {
+                        minimapCtx.fillRect(x * miniTileWidth, z * miniTileHeight, miniTileWidth, miniTileHeight);
                     }
                 }
             }
@@ -478,7 +516,19 @@
                 if (!coin.collected) {
                     minimapCtx.fillRect(
                         (coin.x / tileSize) * miniTileWidth,
-                        (coin.y / tileSize) * miniTileHeight,
+                        (coin.z / tileSize) * miniTileHeight,
+                        miniTileWidth,
+                        miniTileHeight
+                    );
+                }
+            });
+
+            minimapCtx.fillStyle = 'orange';
+            lightSources.forEach(light => {
+                if (!light.collected) {
+                    minimapCtx.fillRect(
+                        (light.x / tileSize) * miniTileWidth,
+                        (light.z / tileSize) * miniTileHeight,
                         miniTileWidth,
                         miniTileHeight
                     );
@@ -488,7 +538,7 @@
             minimapCtx.fillStyle = 'blue';
             minimapCtx.fillRect(
                 (goal.x / tileSize) * miniTileWidth,
-                (goal.y / tileSize) * miniTileHeight,
+                (goal.z / tileSize) * miniTileHeight,
                 miniTileWidth,
                 miniTileHeight
             );
@@ -496,32 +546,49 @@
             minimapCtx.fillStyle = 'red';
             minimapCtx.fillRect(
                 (player.x / tileSize) * miniTileWidth,
-                (player.y / tileSize) * miniTileHeight,
+                (player.z / tileSize) * miniTileHeight,
                 miniTileWidth,
                 miniTileHeight
             );
         }
 
-        // Next level button handler
-        nextLevelButton.addEventListener('click', () => {
-            resultsOverlay.style.display = 'none';
+        // Update HUD
+        function updateHUD() {
+            hud.level.textContent = levelsCompleted + 1;
+            hud.score.textContent = score;
+            hud.coins.textContent = 10 - coins.filter(c => !c.collected).length;
+            hud.lightSources.textContent = 5 - lightSources.filter(l => !l.collected).length;
+            hud.flashlightMeter.textContent = `${Math.floor(flashlightPower)}%`;
+        }
+
+        // Reset game
+        function resetGame() {
+            gameOverOverlay.style.display = 'none';
+            score = 0;
+            levelsCompleted = 0;
             generateMaze();
-            console.log('Next level clicked - overlay hidden');
-        });
+            controls.lock();
+        }
 
         // Game loop
         function gameLoop() {
             update();
-            draw();
+            renderer.render(scene, camera);
             drawMinimap();
+            updateHUD();
             requestAnimationFrame(gameLoop);
         }
 
         // Start game
-        console.log('Game starting - overlay display:', resultsOverlay.style.display);
-        canvas.focus(); // Ensure canvas has focus for events
         generateMaze();
         gameLoop();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>
