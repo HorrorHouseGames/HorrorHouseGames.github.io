@@ -1,11 +1,176 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Test</title>
+    <title>Endless Maze Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 0 auto;
+            touch-action: none; /* Prevents default touch behavior */
+        }
+        #controls {
+            text-align: center;
+            margin-top: 10px;
+        }
+        button {
+            font-size: 18px;
+            padding: 10px 20px;
+            margin: 5px;
+        }
+    </style>
 </head>
 <body>
-<h1>Hello World</h1>
-<p>I'm hosted with GitHub Pages.</p>
+    <canvas id="gameCanvas" width="320" height="480"></canvas>
+    <div id="controls">
+        <button ontouchstart="moveLeft()" ontouchend="stopMove()">Left</button>
+        <button ontouchstart="moveRight()" ontouchend="stopMove()">Right</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game variables
+        const tileSize = 40;
+        const playerSize = 20;
+        let player = { x: canvas.width / 2, y: canvas.height - 40, speed: 5 };
+        let maze = [];
+        let coins = [];
+        let score = 0;
+        let scrollSpeed = 2;
+        let moveDir = 0; // -1 for left, 1 for right, 0 for stop
+
+        // Generate initial maze row
+        function generateMazeRow(y) {
+            let row = [];
+            for (let x = 0; x < canvas.width / tileSize; x++) {
+                row.push(Math.random() > 0.7 ? 1 : 0); // 1 = wall, 0 = empty
+            }
+            // Ensure at least one gap
+            row[Math.floor(Math.random() * row.length)] = 0;
+            return { tiles: row, y: y };
+        }
+
+        // Generate coin
+        function generateCoin(y) {
+            let x = Math.floor(Math.random() * (canvas.width - tileSize));
+            return { x: x, y: y, collected: false };
+        }
+
+        // Initialize game
+        function init() {
+            for (let i = 0; i < canvas.height / tileSize; i++) {
+                maze.push(generateMazeRow(i * tileSize));
+            }
+            coins.push(generateCoin(canvas.height / 2));
+        }
+
+        // Move player
+        function moveLeft() { moveDir = -1; }
+        function moveRight() { moveDir = 1; }
+        function stopMove() { moveDir = 0; }
+
+        // Update game state
+        function update() {
+            // Move player
+            player.x += moveDir * player.speed;
+            if (player.x < 0) player.x = 0;
+            if (player.x > canvas.width - playerSize) player.x = canvas.width - playerSize;
+
+            // Scroll maze
+            maze.forEach(row => row.y += scrollSpeed);
+            coins.forEach(coin => coin.y += scrollSpeed);
+
+            // Remove off-screen elements and add new ones
+            if (maze[0].y > canvas.height) {
+                maze.shift();
+                maze.push(generateMazeRow(maze[maze.length - 1].y - tileSize));
+                if (Math.random() > 0.7) coins.push(generateCoin(maze[maze.length - 1].y));
+            }
+
+            // Check coin collection
+            coins.forEach((coin, index) => {
+                if (!coin.collected &&
+                    player.x < coin.x + tileSize &&
+                    player.x + playerSize > coin.x &&
+                    player.y < coin.y + tileSize &&
+                    player.y + playerSize > coin.y) {
+                    coin.collected = true;
+                    score += 10;
+                }
+            });
+            coins = coins.filter(coin => !coin.collected && coin.y < canvas.height);
+
+            // Check collision with walls
+            maze.forEach(row => {
+                if (row.y + tileSize > player.y && row.y < player.y + playerSize) {
+                    row.tiles.forEach((tile, i) => {
+                        if (tile === 1 &&
+                            player.x < i * tileSize + tileSize &&
+                            player.x + playerSize > i * tileSize) {
+                            alert('Game Over! Score: ' + score);
+                            resetGame();
+                        }
+                    });
+                }
+            });
+        }
+
+        // Reset game
+        function resetGame() {
+            player.x = canvas.width / 2;
+            maze = [];
+            coins = [];
+            score = 0;
+            init();
+        }
+
+        // Draw game
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw maze
+            ctx.fillStyle = 'gray';
+            maze.forEach(row => {
+                row.tiles.forEach((tile, i) => {
+                    if (tile === 1) {
+                        ctx.fillRect(i * tileSize, row.y, tileSize, tileSize);
+                    }
+                });
+            });
+
+            // Draw coins
+            ctx.fillStyle = 'yellow';
+            coins.forEach(coin => {
+                if (!coin.collected) {
+                    ctx.beginPath();
+                    ctx.arc(coin.x + tileSize / 2, coin.y + tileSize / 2, tileSize / 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            // Draw player
+            ctx.fillStyle = 'red';
+            ctx.fillRect(player.x, player.y, playerSize, playerSize);
+
+            // Draw score
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText('Score: ' + score, 10, 30);
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game
+        init();
+        gameLoop();
+    </script>
 </body>
 </html>
