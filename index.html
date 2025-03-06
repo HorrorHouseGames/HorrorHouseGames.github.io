@@ -47,6 +47,28 @@
             border-radius: 5px;
         }
         #gameOverOverlay button:hover { background-color: #cc3333; }
+        #joystick {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            touch-action: none;
+        }
+        #joystick-knob {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            touch-action: none;
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/controls/PointerLockControls.js"></script>
@@ -67,6 +89,9 @@
         <p>Final Score: <span id="finalScore">0</span></p>
         <button onclick="resetGame()">Restart</button>
     </div>
+    <div id="joystick">
+        <div id="joystick-knob"></div>
+    </div>
 
     <script>
         const minimapCanvas = document.getElementById('minimap');
@@ -82,10 +107,12 @@
         };
         const gameOverOverlay = document.getElementById('gameOverOverlay');
         const finalScoreSpan = document.getElementById('finalScore');
+        const joystick = document.getElementById('joystick');
+        const joystickKnob = document.getElementById('joystick-knob');
 
         // Game variables
         const tileSize = 1;
-        const playerSize = 0.4;
+        const playerSize = 0.3; // Reduced from 0.4 to fix collision
         let mazeWidth = 25;
         let mazeHeight = 25;
         const sizeIncrease = 5;
@@ -108,7 +135,7 @@
         let visitedTiles = new Set();
         let isMinimapExpanded = false;
 
-        // Geometry min-max variables (updated defaults)
+        // Geometry min-max variables
         const minGroundHeight = 0.0;
         const maxGroundHeight = 0.1;
         const minCanopySize = 0.9;
@@ -148,7 +175,7 @@
         const controls = new THREE.PointerLockControls(camera, renderer.domElement);
         document.addEventListener('click', () => controls.lock());
 
-        // Movement controls (WASD and Arrow keys)
+        // Keyboard controls (WASD and Arrow keys)
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         document.addEventListener('keydown', (e) => {
             if (!gameOver) {
@@ -179,47 +206,64 @@
             }
         });
 
-        // Mobile touch controls
-        let touchStartX = null, touchStartY = null;
-        let touchDeltaX = 0, touchDeltaY = 0;
-        let isTouching = false;
+        // Mobile joystick controls
+        let joystickActive = false;
+        let joystickDeltaX = 0;
+        let joystickDeltaY = 0;
+        const joystickRadius = 50; // Half of joystick width/height
 
-        document.addEventListener('touchstart', (e) => {
+        joystick.addEventListener('touchstart', (e) => {
             if (!gameOver && e.touches.length === 1) {
-                isTouching = true;
-                moveForward = true;
-                touchStartX = e.touches[0].clientX;
-                touchStartY = e.touches[0].clientY;
-                touchDeltaX = 0;
-                touchDeltaY = 0;
+                joystickActive = true;
+                const touch = e.touches[0];
+                const rect = joystick.getBoundingClientRect();
+                const centerX = rect.left + joystickRadius;
+                const centerY = rect.top + joystickRadius;
+                joystickDeltaX = touch.clientX - centerX;
+                joystickDeltaY = touch.clientY - centerY;
+                updateJoystickPosition(touch.clientX, touch.clientY);
+                e.preventDefault();
             }
         });
 
-        document.addEventListener('touchmove', (e) => {
-            if (!gameOver && isTouching && e.touches.length === 1) {
-                const touchX = e.touches[0].clientX;
-                const touchY = e.touches[0].clientY;
-                touchDeltaX = touchX - touchStartX;
-                touchDeltaY = touchY - touchStartY;
-
-                controls.getObject().rotation.y -= touchDeltaX * 0.005;
-                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - touchDeltaY * 0.005));
-
-                touchStartX = touchX;
-                touchStartY = touchY;
+        joystick.addEventListener('touchmove', (e) => {
+            if (!gameOver && joystickActive && e.touches.length === 1) {
+                const touch = e.touches[0];
+                const rect = joystick.getBoundingClientRect();
+                const centerX = rect.left + joystickRadius;
+                const centerY = rect.top + joystickRadius;
+                let dx = touch.clientX - centerX;
+                let dy = touch.clientY - centerY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance > joystickRadius) {
+                    dx = dx * joystickRadius / distance;
+                    dy = dy * joystickRadius / distance;
+                }
+                joystickDeltaX = dx;
+                joystickDeltaY = dy;
+                updateJoystickPosition(centerX + dx, centerY + dy);
+                e.preventDefault();
             }
         });
 
-        document.addEventListener('touchend', (e) => {
+        joystick.addEventListener('touchend', (e) => {
             if (!gameOver) {
-                isTouching = false;
-                moveForward = false;
-                controls.getObject().rotation.y = 0;
-                camera.rotation.x = 0;
-                touchDeltaX = 0;
-                touchDeltaY = 0;
+                joystickActive = false;
+                joystickDeltaX = 0;
+                joystickDeltaY = 0;
+                joystickKnob.style.left = '50%';
+                joystickKnob.style.top = '50%';
+                e.preventDefault();
             }
         });
+
+        function updateJoystickPosition(x, y) {
+            const rect = joystick.getBoundingClientRect();
+            const knobX = x - rect.left - 20; // 20 is half knob width
+            const knobY = y - rect.top - 20;  // 20 is half knob height
+            joystickKnob.style.left = `${knobX}px`;
+            joystickKnob.style.top = `${knobY}px`;
+        }
 
         // Maze generation with single path and dead ends
         function generateMaze() {
@@ -227,12 +271,11 @@
             mazeHeight = 25 + sizeIncrease * levelsCompleted;
             const groundBuffer = Math.floor(Math.max(0, levelsCompleted - 4) / 5);
 
-            // Initialize maze with walls (1 = wall, 0 = path, 2 = ground buffer)
             maze = [];
             for (let z = 0; z < mazeHeight; z++) {
                 let row = [];
                 for (let x = 0; x < mazeWidth; x++) {
-                    row.push(1); // All walls initially
+                    row.push(1);
                 }
                 maze.push(row);
             }
@@ -243,16 +286,14 @@
             let goalX = mazeWidth - 2 - groundBuffer;
             let goalZ = mazeHeight - 2 - groundBuffer;
 
-            maze[startZ][startX] = 0; // Start point
+            maze[startZ][startX] = 0;
             stack.push({ x: startX, z: startZ });
 
             function carvePath(x, z) {
                 const directions = [
-                    { dx: 2, dz: 0 }, // Right
-                    { dx: -2, dz: 0 }, // Left
-                    { dx: 0, dz: 2 }, // Down
-                    { dx: 0, dz: -2 } // Up
-                ].sort(() => Math.random() - 0.5); // Shuffle for randomness
+                    { dx: 2, dz: 0 }, { dx: -2, dz: 0 },
+                    { dx: 0, dz: 2 }, { dx: 0, dz: -2 }
+                ].sort(() => Math.random() - 0.5);
 
                 for (const dir of directions) {
                     const newX = x + dir.dx;
@@ -261,7 +302,7 @@
                     if (newX > groundBuffer && newX < mazeWidth - groundBuffer - 1 &&
                         newZ > groundBuffer && newZ < mazeHeight - groundBuffer - 1 &&
                         maze[newZ][newX] === 1) {
-                        maze[newZ - dir.dz / 2][newX - dir.dx / 2] = 0; // Carve between
+                        maze[newZ - dir.dz / 2][newX - dir.dx / 2] = 0;
                         maze[newZ][newX] = 0;
                         stack.push({ x: newX, z: newZ });
                         carvePath(newX, newZ);
@@ -269,11 +310,9 @@
                 }
             }
 
-            // Carve single path
             carvePath(startX, startZ);
-            maze[goalZ][goalX] = 0; // Ensure goal is on path
+            maze[goalZ][goalX] = 0;
 
-            // Extract main path and dead ends
             mainPath = [];
             deadEnds = [];
             const pathSet = new Set();
@@ -286,7 +325,6 @@
                 }
             }
 
-            // Add dead ends without crossing
             const targetDeadEnds = 5 + levelsCompleted;
             for (let i = 0; i < targetDeadEnds; i++) {
                 let attempts = 0;
@@ -318,7 +356,6 @@
                 }
             }
 
-            // Set ground buffer around path
             for (let z = 0; z < mazeHeight; z++) {
                 for (let x = 0; x < mazeWidth; x++) {
                     if (maze[z][x] === 0) {
@@ -328,7 +365,7 @@
                                 const nz = z + dz;
                                 if (nx >= 0 && nx < mazeWidth && nz >= 0 && nz < mazeHeight &&
                                     maze[nz][nx] === 1) {
-                                    maze[nz][nx] = 2; // Ground buffer
+                                    maze[nz][nx] = 2;
                                 }
                             }
                         }
@@ -359,7 +396,6 @@
                 scene.remove(scene.children[1]);
             }
 
-            // Ground and trees
             const groundShape = new THREE.Shape();
             groundShape.moveTo(-tileSize / 2, -tileSize / 2);
             groundShape.lineTo(tileSize / 2, -tileSize / 2);
@@ -385,8 +421,7 @@
                     ground.position.set(x * tileSize + tileSize / 2, 0, z * tileSize + tileSize / 2);
                     scene.add(ground);
 
-
-                    if (maze[z][x] === 1) { // Tree wall
+                    if (maze[z][x] === 1) {
                         const width = minTrunkWidth + Math.random() * (maxTrunkWidth - minTrunkWidth);
                         const height = minTrunkHeight + Math.random() * (maxTrunkHeight - minTrunkHeight);
                         const trunkColor = trunkColors[Math.floor(Math.random() * trunkColors.length)];
@@ -427,28 +462,26 @@
                 }
             }
 
-            // Path tiles with colors, stones only on solution path
             mainPath.forEach(p => {
                 const isDeadEnd = deadEnds.some(de => de.x === p.x && de.z === p.z);
                 let color;
                 if (isDeadEnd) {
-                    const greyVal = 128 + Math.floor(Math.random() * (211 - 128)); // #808080 to #d3d3d3
+                    const greyVal = 128 + Math.floor(Math.random() * (211 - 128));
                     color = (greyVal << 16) | (greyVal << 8) | greyVal;
                 } else {
-                    const greenR = 31 + Math.floor(Math.random() * 16); // 31-47 (#1f to #2f)
-                    const greenG = 63 + Math.floor(Math.random() * 16); // 63-79 (#3f to #4f)
-                    color = (greenR << 16) | (greenG << 8) | 31; // Dark green range
+                    const greenR = 31 + Math.floor(Math.random() * 16);
+                    const greenG = 63 + Math.floor(Math.random() * 16);
+                    color = (greenR << 16) | (greenG << 8) | 31;
                     const stoneRadius = minPathStoneRadius + Math.random() * (maxPathStoneRadius - minPathStoneRadius);
                     const stoneGeometry = new THREE.CircleGeometry(stoneRadius, 32);
                     const stoneMaterial = new THREE.MeshPhongMaterial({ color: color, specular: 0x111111, shininess: 5 });
                     const stone = new THREE.Mesh(stoneGeometry, stoneMaterial);
                     stone.rotation.x = -Math.PI / 2;
                     stone.position.set(p.x * tileSize + tileSize / 2, 0.01, p.z * tileSize + tileSize / 2);
-                    scene.add(stone); // Stones only on solution path
+                    scene.add(stone);
                 }
             });
 
-            // Coins and lights
             const coinGeometry = new THREE.TetrahedronGeometry(tileSize / 4, 0);
             const coinMaterial = new THREE.MeshPhongMaterial({ color: 0xffffaa, specular: 0x111111, shininess: 5 });
             coins.forEach(coin => {
@@ -486,7 +519,6 @@
             flashlight.distance = maxFlashlightDistance;
             gameOver = false;
 
-            // Initial minimap draw
             drawMinimap();
 
             console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Dead ends: ${deadEnds.length}, Ground buffer: ${groundBuffer}`);
@@ -548,7 +580,7 @@
             if (gameOver) return;
 
             const velocity = new THREE.Vector3();
-            if (moveForward || moveBackward || moveLeft || moveRight) {
+            if (moveForward || moveBackward || moveLeft || moveRight || joystickActive) {
                 const direction = new THREE.Vector3();
                 camera.getWorldDirection(direction);
                 direction.y = 0;
@@ -560,6 +592,17 @@
                 right.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
                 if (moveLeft) velocity.sub(right.clone().multiplyScalar(player.speed));
                 if (moveRight) velocity.add(right.clone().multiplyScalar(player.speed));
+
+                if (joystickActive) {
+                    const joystickMagnitude = Math.sqrt(joystickDeltaX * joystickDeltaX + joystickDeltaY * joystickDeltaY);
+                    if (joystickMagnitude > 0) {
+                        const joystickDirX = joystickDeltaX / joystickMagnitude;
+                        const joystickDirY = joystickDeltaY / joystickMagnitude;
+                        const forwardComponent = direction.clone().multiplyScalar(-joystickDirY);
+                        const rightComponent = right.clone().multiplyScalar(joystickDirX);
+                        velocity.add(forwardComponent).add(rightComponent).normalize().multiplyScalar(player.speed * (joystickMagnitude / joystickRadius));
+                    }
+                }
             }
 
             if (velocity.length() > 0) {
@@ -575,19 +618,6 @@
                 if (canMoveTo(newX, newZ)) player.z = newZ;
 
                 controls.getObject().position.set(player.x + playerSize / 2, tileSize / 2, player.z + playerSize / 2);
-
-                // Update visited tiles within 2-tile radius
-                const tileX = Math.floor(player.x / tileSize);
-                const tileZ = Math.floor(player.z / tileSize);
-                for (let dz = -2; dz <= 2; dz++) {
-                    for (let dx = -2; dx <= 2; dx++) {
-                        const nx = tileX + dx;
-                        const nz = tileZ + dz;
-                        if (nx >= 0 && nx < mazeWidth && nz >= 0 && nz < mazeHeight) {
-                            visitedTiles.add(`${nx},${nz}`);
-                        }
-                    }
-                }
             }
 
             coins.forEach(coin => {
@@ -630,6 +660,18 @@
                 player.lastX = player.x;
                 player.lastZ = player.z;
                 drawMinimap();
+
+                const tileX = Math.floor(player.x / tileSize);
+                const tileZ = Math.floor(player.z / tileSize);
+                for (let dz = -2; dz <= 2; dz++) {
+                    for (let dx = -2; dx <= 2; dx++) {
+                        const nx = tileX + dx;
+                        const nz = tileZ + dz;
+                        if (nx >= 0 && nx < mazeWidth && nz >= 0 && nz < mazeHeight) {
+                            visitedTiles.add(`${nx},${nz}`);
+                        }
+                    }
+                }
             }
 
             if (Math.abs(player.x - goal.x) < tileSize && Math.abs(player.z - goal.z) < tileSize) {
@@ -658,7 +700,6 @@
 
             minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
 
-            // Rotate 180 degrees around center
             minimapCtx.save();
             minimapCtx.translate(minimapCanvas.width / 2, minimapCanvas.height / 2);
             minimapCtx.rotate(Math.PI);
@@ -768,7 +809,6 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // Start game
         generateMaze();
         gameLoop();
 
