@@ -5,17 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
-        #gameCanvas {
-            width: 100%;
-            height: 100vh;
-        }
+        #gameCanvas { width: 100%; height: 100vh; }
         #minimap {
             border: 1px solid black;
             position: absolute;
             top: 10px;
             right: 10px;
-            width: 200px; /* 10 tiles * 20px */
-            height: 200px; /* 10 tiles * 20px */
+            width: 200px;
+            height: 200px;
+            transition: all 0.5s ease;
         }
         #hud {
             position: absolute;
@@ -48,9 +46,7 @@
             border: none;
             border-radius: 5px;
         }
-        #gameOverOverlay button:hover {
-            background-color: #cc3333;
-        }
+        #gameOverOverlay button:hover { background-color: #cc3333; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/controls/PointerLockControls.js"></script>
@@ -89,10 +85,9 @@
 
         // Game variables
         const tileSize = 1;
-        const baseWallHeight = 2;
         const playerSize = 0.4;
-        let mazeWidth = 20;
-        let mazeHeight = 20;
+        let mazeWidth = 25;
+        let mazeHeight = 25;
         const sizeIncrease = 5;
         let player = { x: tileSize, z: tileSize, speed: 0.05, lastX: tileSize, lastZ: tileSize };
         let goal = { x: 0, z: 0 };
@@ -102,13 +97,30 @@
         let lightSources = [];
         let score = 0;
         let levelsCompleted = 0;
-        let path = [];
+        let mainPath = [];
+        let deadEnds = [];
         let flashlightPower = 100;
         const maxFlashlightIntensity = 2.5;
         const minFlashlightDistance = 1;
         const maxFlashlightDistance = 10;
         const flashlightDrainRate = 1;
         let gameOver = false;
+        let visitedTiles = new Set();
+        let isMinimapExpanded = false;
+
+        // Geometry min-max variables (updated defaults)
+        const minGroundHeight = 0.0;
+        const maxGroundHeight = 0.1;
+        const minCanopySize = 0.9;
+        const maxCanopySize = 1.2;
+        const minTrunkWidth = 0.2;
+        const maxTrunkWidth = 0.4;
+        const minTrunkHeight = 1.2;
+        const maxTrunkHeight = 2.2;
+        const minPathStoneRadius = tileSize / 20;
+        const maxPathStoneRadius = tileSize / 2;
+        const pathWidth = 1;
+        const trunkOffsetY = -0.7;
 
         // Three.js setup
         const scene = new THREE.Scene();
@@ -117,10 +129,8 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('gameCanvas').appendChild(renderer.domElement);
 
-        // Fog (dense, black beyond flashlight)
         scene.fog = new THREE.Fog(0x000000, 8, 12);
 
-        // Flashlight (sole light source, wider angle)
         const flashlight = new THREE.SpotLight(0xaaaaaa, maxFlashlightIntensity, maxFlashlightDistance, Math.PI / 3, 0.9);
         flashlight.position.set(0, 0.5, 0);
         flashlight.target = new THREE.Object3D();
@@ -128,16 +138,13 @@
         camera.add(flashlight);
         camera.add(flashlight.target);
         scene.add(camera);
-        console.log('Flashlight initialized - Color: 0xaaaaaa, Intensity:', flashlight.intensity, 'Distance:', flashlight.distance);
 
-        // Debug sphere
         const debugSphereGeometry = new THREE.SphereGeometry(0.05, 16, 16);
         const debugSphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
         const debugSphere = new THREE.Mesh(debugSphereGeometry, debugSphereMaterial);
         debugSphere.position.copy(flashlight.position);
         camera.add(debugSphere);
 
-        // PointerLockControls
         const controls = new THREE.PointerLockControls(camera, renderer.domElement);
         document.addEventListener('click', () => controls.lock());
 
@@ -154,6 +161,7 @@
                     case 'KeyA': moveLeft = true; break;
                     case 'ArrowRight':
                     case 'KeyD': moveRight = true; break;
+                    case 'Space': if (!isMinimapExpanded) toggleMinimap(); break;
                 }
             }
         });
@@ -167,6 +175,7 @@
                 case 'KeyA': moveLeft = false; break;
                 case 'ArrowRight':
                 case 'KeyD': moveRight = false; break;
+                case 'Space': if (isMinimapExpanded) toggleMinimap(); break;
             }
         });
 
@@ -212,177 +221,205 @@
             }
         });
 
-        // A* Pathfinding
-        function findPath(startX, startZ, goalX, goalZ) {
-            const openSet = [];
-            const closedSet = new Set();
-            const cameFrom = new Map();
-            const gScore = new Map();
-            const fScore = new Map();
-
-            const heuristic = (x1, z1, x2, z2) => Math.abs(x1 - x2) + Math.abs(z1 - z2);
-            const start = `${startX},${startZ}`;
-            const end = `${goalX},${goalZ}`;
-
-            gScore.set(start, 0);
-            fScore.set(start, heuristic(startX, startZ, goalX, goalZ));
-            openSet.push({ x: startX, z: startZ, f: fScore.get(start) });
-
-            while (openSet.length > 0) {
-                openSet.sort((a, b) => a.f - b.f);
-                const current = openSet.shift();
-                const currentKey = `${current.x},${current.z}`;
-
-                if (currentKey === end) {
-                    const path = [];
-                    let temp = currentKey;
-                    while (cameFrom.has(temp)) {
-                        const [x, z] = temp.split(',').map(Number);
-                        path.push({ x, z });
-                        temp = cameFrom.get(temp);
-                    }
-                    path.push({ x: startX, z: startZ });
-                    return path.reverse();
-                }
-
-                closedSet.add(currentKey);
-
-                const neighbors = [
-                    { x: current.x + 1, z: current.z },
-                    { x: current.x - 1, z: current.z },
-                    { x: current.x, z: current.z + 1 },
-                    { x: current.x, z: current.z - 1 }
-                ];
-
-                for (const neighbor of neighbors) {
-                    if (neighbor.x < 0 || neighbor.x >= mazeWidth || neighbor.z < 0 || neighbor.z >= mazeHeight) continue;
-                    if (maze[neighbor.z][neighbor.x] === 1) continue;
-
-                    const neighborKey = `${neighbor.x},${neighbor.z}`;
-                    if (closedSet.has(neighborKey)) continue;
-
-                    const tentativeG = gScore.get(currentKey) + 1;
-
-                    if (!openSet.some(node => node.x === neighbor.x && node.z === neighbor.z)) {
-                        openSet.push({ x: neighbor.x, z: neighbor.z });
-                    } else if (tentativeG >= (gScore.get(neighborKey) || Infinity)) {
-                        continue;
-                    }
-
-                    cameFrom.set(neighborKey, currentKey);
-                    gScore.set(neighborKey, tentativeG);
-                    fScore.set(neighborKey, tentativeG + heuristic(neighbor.x, neighbor.z, goalX, goalZ));
-                    openSet.find(n => n.x === neighbor.x && n.z === neighbor.z).f = fScore.get(neighborKey);
-                }
-            }
-            return [];
-        }
-
-        // Generate maze with random start and goal
+        // Maze generation with single path and dead ends
         function generateMaze() {
-            mazeWidth = 20 + sizeIncrease * levelsCompleted;
-            mazeHeight = 20 + sizeIncrease * levelsCompleted;
+            mazeWidth = 25 + sizeIncrease * levelsCompleted;
+            mazeHeight = 25 + sizeIncrease * levelsCompleted;
+            const groundBuffer = Math.floor(Math.max(0, levelsCompleted - 4) / 5);
 
+            // Initialize maze with walls (1 = wall, 0 = path, 2 = ground buffer)
             maze = [];
             for (let z = 0; z < mazeHeight; z++) {
                 let row = [];
                 for (let x = 0; x < mazeWidth; x++) {
-                    row.push(Math.random() > 0.7 ? 1 : 0);
+                    row.push(1); // All walls initially
                 }
                 maze.push(row);
             }
 
-            let startX, startZ, goalX, goalZ;
-            const minDistance = Math.min(mazeWidth, mazeHeight) * 0.75;
+            const stack = [];
+            let startX = 1 + groundBuffer;
+            let startZ = 1 + groundBuffer;
+            let goalX = mazeWidth - 2 - groundBuffer;
+            let goalZ = mazeHeight - 2 - groundBuffer;
 
-            do {
-                startX = Math.floor(Math.random() * mazeWidth);
-                startZ = Math.floor(Math.random() * mazeHeight);
-            } while (maze[startZ][startX] === 1);
-            maze[startZ][startX] = 0;
+            maze[startZ][startX] = 0; // Start point
+            stack.push({ x: startX, z: startZ });
+
+            function carvePath(x, z) {
+                const directions = [
+                    { dx: 2, dz: 0 }, // Right
+                    { dx: -2, dz: 0 }, // Left
+                    { dx: 0, dz: 2 }, // Down
+                    { dx: 0, dz: -2 } // Up
+                ].sort(() => Math.random() - 0.5); // Shuffle for randomness
+
+                for (const dir of directions) {
+                    const newX = x + dir.dx;
+                    const newZ = z + dir.dz;
+
+                    if (newX > groundBuffer && newX < mazeWidth - groundBuffer - 1 &&
+                        newZ > groundBuffer && newZ < mazeHeight - groundBuffer - 1 &&
+                        maze[newZ][newX] === 1) {
+                        maze[newZ - dir.dz / 2][newX - dir.dx / 2] = 0; // Carve between
+                        maze[newZ][newX] = 0;
+                        stack.push({ x: newX, z: newZ });
+                        carvePath(newX, newZ);
+                    }
+                }
+            }
+
+            // Carve single path
+            carvePath(startX, startZ);
+            maze[goalZ][goalX] = 0; // Ensure goal is on path
+
+            // Extract main path and dead ends
+            mainPath = [];
+            deadEnds = [];
+            const pathSet = new Set();
+            for (let z = 0; z < mazeHeight; z++) {
+                for (let x = 0; x < mazeWidth; x++) {
+                    if (maze[z][x] === 0) {
+                        mainPath.push({ x, z });
+                        pathSet.add(`${x},${z}`);
+                    }
+                }
+            }
+
+            // Add dead ends without crossing
+            const targetDeadEnds = 5 + levelsCompleted;
+            for (let i = 0; i < targetDeadEnds; i++) {
+                let attempts = 0;
+                while (attempts < 100) {
+                    const startIdx = Math.floor(Math.random() * mainPath.length);
+                    const { x, z } = mainPath[startIdx];
+                    const directions = [
+                        { dx: 2, dz: 0 }, { dx: -2, dz: 0 },
+                        { dx: 0, dz: 2 }, { dx: 0, dz: -2 }
+                    ];
+                    const dir = directions[Math.floor(Math.random() * 4)];
+                    const endX = x + dir.dx * 2;
+                    const endZ = z + dir.dz * 2;
+                    const midX = x + dir.dx / 2;
+                    const midZ = z + dir.dz / 2;
+                    if (endX > groundBuffer && endX < mazeWidth - groundBuffer - 1 &&
+                        endZ > groundBuffer && endZ < mazeHeight - groundBuffer - 1 &&
+                        maze[endZ][endX] === 1 && !pathSet.has(`${endX},${endZ}`) &&
+                        maze[midZ][midX] === 1 && !pathSet.has(`${midX},${midZ}`)) {
+                        maze[midZ][midX] = 0;
+                        maze[endZ][endX] = 0;
+                        deadEnds.push({ x: endX, z: endZ });
+                        mainPath.push({ x: midX, z: midZ }, { x: endX, z: endZ });
+                        pathSet.add(`${midX},${midZ}`);
+                        pathSet.add(`${endX},${endZ}`);
+                        break;
+                    }
+                    attempts++;
+                }
+            }
+
+            // Set ground buffer around path
+            for (let z = 0; z < mazeHeight; z++) {
+                for (let x = 0; x < mazeWidth; x++) {
+                    if (maze[z][x] === 0) {
+                        for (let dz = -groundBuffer; dz <= groundBuffer; dz++) {
+                            for (let dx = -groundBuffer; dx <= groundBuffer; dx++) {
+                                const nx = x + dx;
+                                const nz = z + dz;
+                                if (nx >= 0 && nx < mazeWidth && nz >= 0 && nz < mazeHeight &&
+                                    maze[nz][nx] === 1) {
+                                    maze[nz][nx] = 2; // Ground buffer
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             player.x = startX * tileSize;
             player.z = startZ * tileSize;
             player.lastX = player.x;
             player.lastZ = player.z;
-
-            do {
-                do {
-                    goalX = Math.floor(Math.random() * mazeWidth);
-                    goalZ = Math.floor(Math.random() * mazeHeight);
-                } while (maze[goalZ][goalX] === 1 || (goalX === startX && goalZ === startZ));
-                const distance = Math.sqrt((goalX - startX) ** 2 + (goalZ - startZ) ** 2);
-                if (distance >= minDistance) {
-                    maze[goalZ][goalX] = 0;
-                    path = findPath(startX, startZ, goalX, goalZ);
-                }
-            } while (path.length === 0 || Math.sqrt((goalX - startX) ** 2 + (goalZ - startZ) ** 2) < minDistance);
-
             goal.x = goalX * tileSize;
             goal.z = goalZ * tileSize;
 
-            coins = [];
-            for (let i = 0; i < 10; i++) {
-                let x, z;
-                do {
-                    x = Math.floor(Math.random() * mazeWidth);
-                    z = Math.floor(Math.random() * mazeHeight);
-                } while (maze[z][x] === 1 || (x === startX && z === startZ) || (x === goalX && z === goalZ));
-                coins.push({ x: x * tileSize, z: z * tileSize, collected: false });
-            }
-
+            coins = deadEnds.map(de => ({ x: de.x * tileSize, z: de.z * tileSize, collected: false }));
             lightSources = [];
-            const pathStep = Math.max(5, Math.floor(path.length / 5));
-            for (let i = 0; i < path.length; i += pathStep) {
-                if (i > 0 && i < path.length - 1) {
-                    const p = path[i];
+            for (let i = 0; i < mainPath.length; i += Math.floor(Math.random() * 6) + 5) {
+                const p = mainPath[i];
+                if (!deadEnds.some(de => de.x === p.x && de.z === p.z)) {
                     lightSources.push({ x: p.x * tileSize, z: p.z * tileSize, collected: false });
                 }
             }
+
+            visitedTiles = new Set();
+            visitedTiles.add(`${startX},${startZ}`);
 
             while (scene.children.length > 1) {
                 scene.remove(scene.children[1]);
             }
 
-            const groundGeometry = new THREE.PlaneGeometry(mazeWidth * tileSize, mazeHeight * tileSize);
-            const groundMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x2f2f1f,
-                specular: 0x111111,
-                shininess: 5
-            });
-            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-            ground.rotation.x = -Math.PI / 2;
-            ground.position.set(mazeWidth * tileSize / 2, 0, mazeHeight * tileSize / 2);
-            scene.add(ground);
-
-            trees = [];
-            const treeMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x2a1f15,
-                specular: 0x111111,
-                shininess: 5
-            });
-            const canopyMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x2f4f2f, // Forest green
-                specular: 0x111111,
-                shininess: 5,
-                side: THREE.DoubleSide // Visible from all angles
-            });
+            // Ground and trees
+            const groundShape = new THREE.Shape();
+            groundShape.moveTo(-tileSize / 2, -tileSize / 2);
+            groundShape.lineTo(tileSize / 2, -tileSize / 2);
+            groundShape.lineTo(tileSize / 2, tileSize / 2);
+            groundShape.lineTo(-tileSize / 2, tileSize / 2);
+            groundShape.lineTo(-tileSize / 2, -tileSize / 2);
+            const groundColors = [0x4f2f1f, 0x2f4f2f, 0x4f4f1f];
+            const canopyColors = [0x1f3f1f, 0x3f2f1f, 0x3f3f1f];
+            const trunkColors = [0x2a1f15, 0x1f150f, 0x15100a];
             for (let z = 0; z < mazeHeight; z++) {
                 for (let x = 0; x < mazeWidth; x++) {
-                    if (maze[z][x] === 1) {
-                        const width = tileSize * (0.1 + Math.random() * 0.8); // 10% to 90%
-                        const height = baseWallHeight * (width / tileSize);
-                        const treeGeometry = new THREE.CylinderGeometry(width / 2, width / 2, height, 8);
+                    const isPath = maze[z][x] === 0;
+                    const groundHeight = isPath ? 0.0 : minGroundHeight + Math.random() * (maxGroundHeight - minGroundHeight);
+                    const extrudeSettings = { depth: groundHeight, bevelEnabled: false };
+                    const groundGeometry = new THREE.ExtrudeGeometry(groundShape, extrudeSettings);
+                    const groundMaterial = new THREE.MeshPhongMaterial({ 
+                        color: groundColors[Math.floor(Math.random() * groundColors.length)],
+                        specular: 0x111111,
+                        shininess: 5
+                    });
+                    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+                    ground.rotation.x = -Math.PI / 2;
+                    ground.position.set(x * tileSize + tileSize / 2, 0, z * tileSize + tileSize / 2);
+                    scene.add(ground);
+
+
+                    if (maze[z][x] === 1) { // Tree wall
+                        const width = minTrunkWidth + Math.random() * (maxTrunkWidth - minTrunkWidth);
+                        const height = minTrunkHeight + Math.random() * (maxTrunkHeight - minTrunkHeight);
+                        const trunkColor = trunkColors[Math.floor(Math.random() * trunkColors.length)];
+                        const treeMaterial = new THREE.MeshPhongMaterial({ 
+                            color: trunkColor,
+                            specular: 0x111111,
+                            shininess: 5
+                        });
+                        const trunkPoints = [
+                            new THREE.Vector2(0, 0),
+                            new THREE.Vector2(width / 2, height * 0.3),
+                            new THREE.Vector2(width / 2.5, height * 0.6),
+                            new THREE.Vector2(width / 3, height * 0.9),
+                            new THREE.Vector2(0, height)
+                        ];
+                        const treeGeometry = new THREE.LatheGeometry(trunkPoints, 12);
                         const tree = new THREE.Mesh(treeGeometry, treeMaterial);
                         const treeX = x * tileSize + tileSize / 2;
                         const treeZ = z * tileSize + tileSize / 2;
-                        tree.position.set(treeX, height / 2, treeZ);
+                        tree.position.set(treeX, trunkOffsetY, treeZ);
                         scene.add(tree);
 
-                        // Add canopy as sphere
-                        const canopySize = width * 2; // Diameter of sphere
-                        const canopyGeometry = new THREE.SphereGeometry(canopySize / 2, 16, 16); // Radius = half diameter
+                        const canopySize = minCanopySize + Math.random() * (maxCanopySize - minCanopySize);
+                        const canopyGeometry = new THREE.IcosahedronGeometry(canopySize / 2, 0);
+                        const canopyColor = canopyColors[Math.floor(Math.random() * canopyColors.length)];
+                        const canopyMaterial = new THREE.MeshPhongMaterial({ 
+                            color: canopyColor,
+                            specular: 0x111111,
+                            shininess: 5,
+                            side: THREE.DoubleSide
+                        });
                         const canopy = new THREE.Mesh(canopyGeometry, canopyMaterial);
-                        canopy.position.set(treeX, height + canopySize / 2, treeZ); // Center above tree top
+                        canopy.position.set(treeX, height + trunkOffsetY, treeZ);
                         scene.add(canopy);
 
                         trees.push({ x: treeX, z: treeZ, width: width });
@@ -390,24 +427,30 @@
                 }
             }
 
-            const pathGeometry = new THREE.BoxGeometry(tileSize * 0.8, 0.01, tileSize * 0.8);
-            const pathMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x3a4a3a,
-                specular: 0x111111,
-                shininess: 5
-            });
-            path.forEach(p => {
-                const pathTile = new THREE.Mesh(pathGeometry, pathMaterial);
-                pathTile.position.set(p.x * tileSize + tileSize / 2, 0.01, p.z * tileSize + tileSize / 2);
-                scene.add(pathTile);
+            // Path tiles with colors, stones only on solution path
+            mainPath.forEach(p => {
+                const isDeadEnd = deadEnds.some(de => de.x === p.x && de.z === p.z);
+                let color;
+                if (isDeadEnd) {
+                    const greyVal = 128 + Math.floor(Math.random() * (211 - 128)); // #808080 to #d3d3d3
+                    color = (greyVal << 16) | (greyVal << 8) | greyVal;
+                } else {
+                    const greenR = 31 + Math.floor(Math.random() * 16); // 31-47 (#1f to #2f)
+                    const greenG = 63 + Math.floor(Math.random() * 16); // 63-79 (#3f to #4f)
+                    color = (greenR << 16) | (greenG << 8) | 31; // Dark green range
+                    const stoneRadius = minPathStoneRadius + Math.random() * (maxPathStoneRadius - minPathStoneRadius);
+                    const stoneGeometry = new THREE.CircleGeometry(stoneRadius, 32);
+                    const stoneMaterial = new THREE.MeshPhongMaterial({ color: color, specular: 0x111111, shininess: 5 });
+                    const stone = new THREE.Mesh(stoneGeometry, stoneMaterial);
+                    stone.rotation.x = -Math.PI / 2;
+                    stone.position.set(p.x * tileSize + tileSize / 2, 0.01, p.z * tileSize + tileSize / 2);
+                    scene.add(stone); // Stones only on solution path
+                }
             });
 
-            const coinGeometry = new THREE.SphereGeometry(tileSize / 4, 32, 32);
-            const coinMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xffffaa,
-                specular: 0x111111,
-                shininess: 5
-            });
+            // Coins and lights
+            const coinGeometry = new THREE.TetrahedronGeometry(tileSize / 4, 0);
+            const coinMaterial = new THREE.MeshPhongMaterial({ color: 0xffffaa, specular: 0x111111, shininess: 5 });
             coins.forEach(coin => {
                 const coinMesh = new THREE.Mesh(coinGeometry, coinMaterial);
                 coinMesh.position.set(coin.x + tileSize / 2, tileSize / 4, coin.z + tileSize / 2);
@@ -415,11 +458,9 @@
                 scene.add(coinMesh);
             });
 
-            const lightSourceGeometry = new THREE.SphereGeometry(tileSize / 6, 16, 16);
+            const lightSourceGeometry = new THREE.OctahedronGeometry(tileSize / 6, 0);
             const lightSourceMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xffaa55,
-                specular: 0x111111,
-                shininess: 5
+                color: 0xffaa55, specular: 0x111111, shininess: 5, emissive: 0xffaa55, emissiveIntensity: 0 
             });
             lightSources.forEach(light => {
                 const lightMesh = new THREE.Mesh(lightSourceGeometry, lightSourceMaterial);
@@ -428,12 +469,8 @@
                 scene.add(lightMesh);
             });
 
-            const goalGeometry = new THREE.BoxGeometry(tileSize, tileSize, tileSize);
-            const goalMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x4444ff,
-                specular: 0x111111,
-                shininess: 5
-            });
+            const goalGeometry = new THREE.DodecahedronGeometry(tileSize / 2, 0);
+            const goalMaterial = new THREE.MeshPhongMaterial({ color: 0x4444ff, specular: 0x111111, shininess: 5 });
             const goalMesh = new THREE.Mesh(goalGeometry, goalMaterial);
             goalMesh.position.set(goal.x + tileSize / 2, tileSize / 2, goal.z + tileSize / 2);
             goal.mesh = goalMesh;
@@ -448,13 +485,18 @@
             flashlight.intensity = maxFlashlightIntensity;
             flashlight.distance = maxFlashlightDistance;
             gameOver = false;
-            console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Light sources: ${lightSources.length}, Start: (${startX}, ${startZ}), Goal: (${goalX}, ${goalZ})`);
+
+            // Initial minimap draw
+            drawMinimap();
+
+            console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Dead ends: ${deadEnds.length}, Ground buffer: ${groundBuffer}`);
         }
 
-        // Updated collision check function
+        // Updated collision check
         function canMoveTo(newX, newZ) {
-            if (newX < 0 || newX + playerSize > mazeWidth * tileSize || 
-                newZ < 0 || newZ + playerSize > mazeHeight * tileSize) {
+            const tileX = Math.floor(newX / tileSize);
+            const tileZ = Math.floor(newZ / tileSize);
+            if (tileX < 0 || tileX >= mazeWidth || tileZ < 0 || tileZ >= mazeHeight || maze[tileZ][tileX] === 1) {
                 return false;
             }
 
@@ -473,6 +515,32 @@
             }
 
             return true;
+        }
+
+        // Toggle minimap expansion from top-right
+        function toggleMinimap() {
+            if (isMinimapExpanded) {
+                minimapCanvas.style.width = '200px';
+                minimapCanvas.style.height = '200px';
+                minimapCanvas.style.top = '10px';
+                minimapCanvas.style.right = '10px';
+                minimapCanvas.style.left = 'auto';
+                minimapCanvas.width = 200;
+                minimapCanvas.height = 200;
+            } else {
+                const padding = 50;
+                const mapWidth = Math.min(window.innerWidth - 2 * padding, mazeWidth * 20);
+                const mapHeight = Math.min(window.innerHeight - 2 * padding, mazeHeight * 20);
+                minimapCanvas.style.width = `${mapWidth}px`;
+                minimapCanvas.style.height = `${mapHeight}px`;
+                minimapCanvas.style.top = `${10}px`;
+                minimapCanvas.style.right = `${10}px`;
+                minimapCanvas.style.left = 'auto';
+                minimapCanvas.width = mapWidth;
+                minimapCanvas.height = mapHeight;
+            }
+            isMinimapExpanded = !isMinimapExpanded;
+            drawMinimap();
         }
 
         // Update game state
@@ -507,14 +575,23 @@
                 if (canMoveTo(newX, newZ)) player.z = newZ;
 
                 controls.getObject().position.set(player.x + playerSize / 2, tileSize / 2, player.z + playerSize / 2);
+
+                // Update visited tiles within 2-tile radius
+                const tileX = Math.floor(player.x / tileSize);
+                const tileZ = Math.floor(player.z / tileSize);
+                for (let dz = -2; dz <= 2; dz++) {
+                    for (let dx = -2; dx <= 2; dx++) {
+                        const nx = tileX + dx;
+                        const nz = tileZ + dz;
+                        if (nx >= 0 && nx < mazeWidth && nz >= 0 && nz < mazeHeight) {
+                            visitedTiles.add(`${nx},${nz}`);
+                        }
+                    }
+                }
             }
 
-            // Collect coins
-            let coinsCollected = coins.filter(c => !c.collected).length;
-            coins.forEach((coin, index) => {
-                if (!coin.collected &&
-                    Math.abs(player.x - coin.x) < tileSize &&
-                    Math.abs(player.z - coin.z) < tileSize) {
+            coins.forEach(coin => {
+                if (!coin.collected && Math.abs(player.x - coin.x) < tileSize && Math.abs(player.z - coin.z) < tileSize) {
                     coin.collected = true;
                     score += 10 * (levelsCompleted + 1);
                     scene.remove(coin.mesh);
@@ -522,24 +599,17 @@
             });
             coins = coins.filter(coin => !coin.collected);
 
-            // Collect light sources
-            let lightSourcesCollected = lightSources.filter(l => !l.collected).length;
-            lightSources.forEach((light, index) => {
-                if (!light.collected &&
-                    Math.abs(player.x - light.x) < tileSize &&
-                    Math.abs(player.z - light.z) < tileSize) {
+            lightSources.forEach(light => {
+                if (!light.collected && Math.abs(player.x - light.x) < tileSize && Math.abs(player.z - light.z) < tileSize) {
                     light.collected = true;
                     scene.remove(light.mesh);
-                    if (flashlightPower < 200) {
-                        flashlightPower = Math.min(200, flashlightPower + 10);
-                    }
+                    flashlightPower = Math.min(200, flashlightPower + 10);
                 }
             });
             lightSources = lightSources.filter(light => !light.collected);
 
-            // Update flashlight power
             if (flashlightPower > 0) {
-                flashlightPower -= flashlightDrainRate / 60; // 1% per second, assuming 60 FPS
+                flashlightPower -= flashlightDrainRate / 60;
                 flashlightPower = Math.max(0, flashlightPower);
                 flashlight.intensity = maxFlashlightIntensity * Math.min(1, flashlightPower / 100);
                 flashlight.distance = minFlashlightDistance + (maxFlashlightDistance - minFlashlightDistance) * Math.min(1, flashlightPower / 100);
@@ -551,14 +621,17 @@
                 }
             }
 
-            // Update minimap if player moved
+            const pulse = (Math.sin(Date.now() * 0.002) + 1) / 2;
+            lightSources.forEach(light => {
+                if (!light.collected && light.mesh) light.mesh.material.emissiveIntensity = pulse;
+            });
+
             if (player.x !== player.lastX || player.z !== player.lastZ) {
                 player.lastX = player.x;
                 player.lastZ = player.z;
                 drawMinimap();
             }
 
-            // Check goal
             if (Math.abs(player.x - goal.x) < tileSize && Math.abs(player.z - goal.z) < tileSize) {
                 levelsCompleted++;
                 score += 50 * levelsCompleted;
@@ -567,85 +640,115 @@
             }
         }
 
-        // Draw minimap (10x10 area around player, static top-down)
-        function drawMinimap() {
-            const playerTileX = Math.floor(player.x / tileSize);
-            const playerTileZ = Math.floor(player.z / tileSize);
-            const miniTileSize = minimapCanvas.width / 10;
-
-            minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
-
-            const minX = Math.max(0, playerTileX - 5);
-            const maxX = Math.min(mazeWidth - 1, playerTileX + 4);
-            const minZ = Math.max(0, playerTileZ - 5);
-            const maxZ = Math.min(mazeHeight - 1, playerTileZ + 4);
-
-            minimapCtx.fillStyle = 'green';
-            path.forEach(p => {
-                if (p.x >= minX && p.x <= maxX && p.z >= minZ && p.z <= maxZ) {
-                    const mapX = (p.x - (playerTileX - 5)) * miniTileSize;
-                    const mapZ = (p.z - (playerTileZ - 5)) * miniTileSize;
-                    minimapCtx.fillRect(mapX, mapZ, miniTileSize, miniTileSize);
-                }
-            });
-
-            minimapCtx.fillStyle = 'gray';
-            for (let z = minZ; z <= maxZ; z++) {
-                for (let x = minX; x <= maxX; x++) {
-                    if (maze[z][x] === 1) {
-                        const mapX = (x - (playerTileX - 5)) * miniTileSize;
-                        const mapZ = (z - (playerTileZ - 5)) * miniTileSize;
-                        minimapCtx.fillRect(mapX, mapZ, miniTileSize, miniTileSize);
-                    }
-                }
-            }
-
-            minimapCtx.fillStyle = 'yellow';
-            coins.forEach(coin => {
-                if (!coin.collected) {
-                    const coinX = Math.floor(coin.x / tileSize);
-                    const coinZ = Math.floor(coin.z / tileSize);
-                    if (coinX >= minX && coinX <= maxX && coinZ >= minZ && coinZ <= maxZ) {
-                        const mapX = (coinX - (playerTileX - 5)) * miniTileSize;
-                        const mapZ = (coinZ - (playerTileZ - 5)) * miniTileSize;
-                        minimapCtx.fillRect(mapX, mapZ, miniTileSize, miniTileSize);
-                    }
-                }
-            });
-
-            minimapCtx.fillStyle = 'orange';
-            lightSources.forEach(light => {
-                if (!light.collected) {
-                    const lightX = Math.floor(light.x / tileSize);
-                    const lightZ = Math.floor(light.z / tileSize);
-                    if (lightX >= minX && lightX <= maxX && lightZ >= minZ && lightZ <= maxZ) {
-                        const mapX = (lightX - (playerTileX - 5)) * miniTileSize;
-                        const mapZ = (lightZ - (playerTileZ - 5)) * miniTileSize;
-                        minimapCtx.fillRect(mapX, mapZ, miniTileSize, miniTileSize);
-                    }
-                }
-            });
-
-            minimapCtx.fillStyle = 'blue';
-            const goalTileX = Math.floor(goal.x / tileSize);
-            const goalTileZ = Math.floor(goal.z / tileSize);
-            if (goalTileX >= minX && goalTileX <= maxX && goalTileZ >= minZ && goalTileZ <= maxZ) {
-                const mapX = (goalTileX - (playerTileX - 5)) * miniTileSize;
-                const mapZ = (goalTileZ - (playerTileZ - 5)) * miniTileSize;
-                minimapCtx.fillRect(mapX, mapZ, miniTileSize, miniTileSize);
-            }
-
-            minimapCtx.fillStyle = 'red';
-            minimapCtx.fillRect(minimapCanvas.width / 2 - miniTileSize / 2, minimapCanvas.height / 2 - miniTileSize / 2, miniTileSize, miniTileSize);
-        }
-
         // Update HUD
         function updateHUD() {
             hud.level.textContent = levelsCompleted + 1;
             hud.score.textContent = score;
-            hud.coins.textContent = 10 - coins.filter(c => !c.collected).length;
-            hud.lightSources.textContent = 5 - lightSources.filter(l => !l.collected).length;
+            hud.coins.textContent = deadEnds.length - coins.filter(c => !c.collected).length;
+            hud.lightSources.textContent = lightSources.length - lightSources.filter(l => !l.collected).length;
             hud.flashlightMeter.textContent = `${Math.floor(flashlightPower)}%`;
+        }
+
+        // Draw minimap with 180-degree rotation
+        function drawMinimap() {
+            const playerTileX = Math.floor(player.x / tileSize);
+            const playerTileZ = Math.floor(player.z / tileSize);
+            const tileWidth = minimapCanvas.width / (isMinimapExpanded ? mazeWidth : 10);
+            const tileHeight = minimapCanvas.height / (isMinimapExpanded ? mazeHeight : 10);
+
+            minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+
+            // Rotate 180 degrees around center
+            minimapCtx.save();
+            minimapCtx.translate(minimapCanvas.width / 2, minimapCanvas.height / 2);
+            minimapCtx.rotate(Math.PI);
+            minimapCtx.translate(-minimapCanvas.width / 2, -minimapCanvas.height / 2);
+
+            if (isMinimapExpanded) {
+                for (let z = 0; z < mazeHeight; z++) {
+                    for (let x = 0; x < mazeWidth; x++) {
+                        if (visitedTiles.has(`${x},${z}`)) {
+                            if (maze[z][x] === 1) {
+                                minimapCtx.fillStyle = 'gray';
+                                minimapCtx.fillRect(x * tileWidth, z * tileHeight, tileWidth, tileHeight);
+                            } else if (maze[z][x] === 0) {
+                                const isDeadEnd = deadEnds.some(de => de.x === x && de.z === z);
+                                minimapCtx.fillStyle = isDeadEnd ? '#a0a0a0' : '#2f4f2f';
+                                minimapCtx.fillRect(x * tileWidth, z * tileHeight, tileWidth, tileHeight);
+                            }
+                        }
+                    }
+                }
+
+                coins.forEach(coin => {
+                    if (!coin.collected && visitedTiles.has(`${Math.floor(coin.x / tileSize)},${Math.floor(coin.z / tileSize)}`)) {
+                        minimapCtx.fillStyle = 'yellow';
+                        minimapCtx.fillRect((coin.x / tileSize) * tileWidth, (coin.z / tileSize) * tileHeight, tileWidth, tileHeight);
+                    }
+                });
+
+                lightSources.forEach(light => {
+                    if (!light.collected && visitedTiles.has(`${Math.floor(light.x / tileSize)},${Math.floor(light.z / tileSize)}`)) {
+                        minimapCtx.fillStyle = 'orange';
+                        minimapCtx.fillRect((light.x / tileSize) * tileWidth, (light.z / tileSize) * tileHeight, tileWidth, tileHeight);
+                    }
+                });
+
+                minimapCtx.fillStyle = 'blue';
+                minimapCtx.fillRect(goal.x / tileSize * tileWidth, goal.z / tileSize * tileHeight, tileWidth, tileHeight);
+            } else {
+                const minX = Math.max(0, playerTileX - 5);
+                const maxX = Math.min(mazeWidth - 1, playerTileX + 4);
+                const minZ = Math.max(0, playerTileZ - 5);
+                const maxZ = Math.min(mazeHeight - 1, playerTileZ + 4);
+
+                for (let z = minZ; z <= maxZ; z++) {
+                    for (let x = minX; x <= maxX; x++) {
+                        if (visitedTiles.has(`${x},${z}`)) {
+                            if (maze[z][x] === 1) {
+                                minimapCtx.fillStyle = 'gray';
+                                minimapCtx.fillRect((x - playerTileX + 5) * tileWidth, (z - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
+                            } else if (maze[z][x] === 0) {
+                                const isDeadEnd = deadEnds.some(de => de.x === x && de.z === z);
+                                minimapCtx.fillStyle = isDeadEnd ? '#a0a0a0' : '#2f4f2f';
+                                minimapCtx.fillRect((x - playerTileX + 5) * tileWidth, (z - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
+                            }
+                        }
+                    }
+                }
+
+                coins.forEach(coin => {
+                    const coinX = Math.floor(coin.x / tileSize);
+                    const coinZ = Math.floor(coin.z / tileSize);
+                    if (!coin.collected && visitedTiles.has(`${coinX},${coinZ}`) && coinX >= minX && coinX <= maxX && coinZ >= minZ && coinZ <= maxZ) {
+                        minimapCtx.fillStyle = 'yellow';
+                        minimapCtx.fillRect((coinX - playerTileX + 5) * tileWidth, (coinZ - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
+                    }
+                });
+
+                lightSources.forEach(light => {
+                    const lightX = Math.floor(light.x / tileSize);
+                    const lightZ = Math.floor(light.z / tileSize);
+                    if (!light.collected && visitedTiles.has(`${lightX},${lightZ}`) && lightX >= minX && lightX <= maxX && lightZ >= minZ && lightZ <= maxZ) {
+                        minimapCtx.fillStyle = 'orange';
+                        minimapCtx.fillRect((lightX - playerTileX + 5) * tileWidth, (lightZ - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
+                    }
+                });
+
+                const goalTileX = Math.floor(goal.x / tileSize);
+                const goalTileZ = Math.floor(goal.z / tileSize);
+                if (goalTileX >= minX && goalTileX <= maxX && goalTileZ >= minZ && goalTileZ <= maxZ) {
+                    minimapCtx.fillStyle = 'blue';
+                    minimapCtx.fillRect((goalTileX - playerTileX + 5) * tileWidth, (goalTileZ - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
+                }
+            }
+
+            minimapCtx.fillStyle = 'red';
+            const playerMapX = isMinimapExpanded ? (playerTileX * tileWidth) : (5 * tileWidth);
+            const playerMapZ = isMinimapExpanded ? (playerTileZ * tileHeight) : (5 * tileHeight);
+            minimapCtx.fillRect(playerMapX, playerMapZ, tileWidth, tileHeight);
+
+            minimapCtx.restore();
         }
 
         // Reset game
@@ -669,11 +772,11 @@
         generateMaze();
         gameLoop();
 
-        // Handle window resize
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            if (isMinimapExpanded) toggleMinimap();
         });
     </script>
 </body>
