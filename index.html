@@ -37,17 +37,17 @@
             text-align: center;
             border-radius: 10px;
         }
-        #gameOverOverlay button {
-            padding: 10px 20px;
-            font-size: 16px;
-            margin-top: 20px;
+        #gameOverOverlay button, #swap-joysticks {
+            padding: 5px 10px;
+            font-size: 12px;
+            margin-top: 5px;
             cursor: pointer;
             background-color: #ff4444;
             color: white;
             border: none;
             border-radius: 5px;
         }
-        #gameOverOverlay button:hover { background-color: #cc3333; }
+        #gameOverOverlay button:hover, #swap-joysticks:hover { background-color: #cc3333; }
         #joystick-move, #joystick-camera {
             position: absolute;
             bottom: 20px;
@@ -56,7 +56,7 @@
             background: rgba(255, 255, 255, 0.3);
             border-radius: 50%;
             touch-action: none;
-            display: none; /* Hidden by default */
+            display: none;
         }
         #joystick-move { left: 20px; }
         #joystick-camera { right: 20px; }
@@ -85,6 +85,7 @@
         Light Sources: <span id="lightSources">0</span><br>
         Flashlight: <span id="flashlightMeter">100%</span><br>
         <div id="controls-info"></div>
+        <button id="swap-joysticks" style="display: none;">Swap Joysticks</button>
     </div>
     <div id="gameOverOverlay">
         <h2>Game Over</h2>
@@ -110,7 +111,8 @@
             coins: document.getElementById('coins'),
             lightSources: document.getElementById('lightSources'),
             flashlightMeter: document.getElementById('flashlightMeter'),
-            controlsInfo: document.getElementById('controls-info')
+            controlsInfo: document.getElementById('controls-info'),
+            swapJoysticks: document.getElementById('swap-joysticks')
         };
         const gameOverOverlay = document.getElementById('gameOverOverlay');
         const finalScoreSpan = document.getElementById('finalScore');
@@ -119,10 +121,19 @@
         const joystickCamera = document.getElementById('joystick-camera');
         const joystickCameraKnob = document.getElementById('joystick-camera-knob');
 
-        // Show joysticks only on touch devices
+        // Touch detection and joystick setup
+        let isJoystickSwapped = false;
         if (navigator.maxTouchPoints > 0) {
             joystickMove.style.display = 'block';
             joystickCamera.style.display = 'block';
+            hud.swapJoysticks.style.display = 'block';
+            hud.swapJoysticks.addEventListener('click', () => {
+                isJoystickSwapped = !isJoystickSwapped;
+                joystickMove.style.left = isJoystickSwapped ? 'auto' : '20px';
+                joystickMove.style.right = isJoystickSwapped ? '20px' : 'auto';
+                joystickCamera.style.left = isJoystickSwapped ? '20px' : 'auto';
+                joystickCamera.style.right = isJoystickSwapped ? 'auto' : '20px';
+            });
         }
 
         // Game variables
@@ -228,7 +239,8 @@
         let cameraJoystickDeltaX = 0, cameraJoystickDeltaY = 0;
         const joystickRadius = 50;
 
-        function setupJoystick(joystickElement, knobElement, isMove) {
+        function setupJoystick(joystickElement, knobElement, isMoveDefault) {
+            const isMove = isJoystickSwapped ? !isMoveDefault : isMoveDefault;
             joystickElement.addEventListener('touchstart', (e) => {
                 if (!gameOver && e.touches.length <= 2) {
                     const touch = e.touches[0];
@@ -276,6 +288,7 @@
 
             joystickElement.addEventListener('touchend', (e) => {
                 if (!gameOver) {
+
                     if (isMove) {
                         moveJoystickActive = false;
                         moveJoystickDeltaX = 0;
@@ -448,14 +461,14 @@
 
             // Coins on ground tiles with 3 walls
             coins = [];
-            for (let z = 0; z < mazeHeight; z++) {
-                for (let x = 0; x < mazeWidth; x++) {
+            for (let z = 1; z < mazeHeight - 1; z++) {
+                for (let x = 1; x < mazeWidth - 1; x++) {
                     if (maze[z][x] === 2) {
                         let wallCount = 0;
-                        if (x > 0 && maze[z][x-1] === 1) wallCount++;
-                        if (x < mazeWidth-1 && maze[z][x+1] === 1) wallCount++;
-                        if (z > 0 && maze[z-1][x] === 1) wallCount++;
-                        if (z < mazeHeight-1 && maze[z+1][x] === 1) wallCount++;
+                        if (maze[z][x-1] === 1) wallCount++;
+                        if (maze[z][x+1] === 1) wallCount++;
+                        if (maze[z-1][x] === 1) wallCount++;
+                        if (maze[z+1][x] === 1) wallCount++;
                         if (wallCount === 3) {
                             coins.push({ x: x * tileSize, z: z * tileSize, collected: false });
                         }
@@ -470,6 +483,8 @@
                 lightSources.push({ x: p.x * tileSize, z: p.z * tileSize, collected: false });
             }
 
+            // Clear previous level data
+            trees = [];
             visitedTiles = new Set();
             visitedTiles.add(`${startX},${startZ}`);
 
@@ -546,11 +561,10 @@
             // Stones only on optimal path
             mainPath.forEach(p => {
                 const isOptimal = optimalPath.some(op => op.x === p.x && op.z === p.z);
-                let color;
                 if (isOptimal) {
                     const greenR = 31 + Math.floor(Math.random() * 16);
                     const greenG = 63 + Math.floor(Math.random() * 16);
-                    color = (greenR << 16) | (greenG << 8) | 31;
+                    const color = (greenR << 16) | (greenG << 8) | 31;
                     const stoneRadius = minPathStoneRadius + Math.random() * (maxPathStoneRadius - minPathStoneRadius);
                     const stoneGeometry = new THREE.CircleGeometry(stoneRadius, 32);
                     const stoneMaterial = new THREE.MeshPhongMaterial({ color: color, specular: 0x111111, shininess: 5 });
@@ -589,6 +603,7 @@
             scene.add(goalMesh);
 
             camera.position.set(player.x + playerSize / 2, tileSize / 2, player.z + playerSize / 2);
+            camera.rotation.x = 0; // Reset pitch
             moveForward = false;
             moveBackward = false;
             moveLeft = false;
@@ -687,8 +702,8 @@
 
             if (cameraJoystickActive) {
                 const rotateSpeed = 0.005;
-                controls.getObject().rotation.y -= cameraJoystickDeltaX * rotateSpeed;
-                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - cameraJoystickDeltaY * rotateSpeed));
+                controls.getObject().rotation.y -= cameraJoystickDeltaX * rotateSpeed; // Left/right yaw
+                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - cameraJoystickDeltaY * rotateSpeed)); // Up/down pitch
             }
 
             if (velocity.length() > 0) {
@@ -776,7 +791,7 @@
             hud.lightSources.textContent = lightSources.filter(l => !l.collected).length;
             hud.flashlightMeter.textContent = `${Math.floor(flashlightPower)}%`;
             hud.controlsInfo.innerHTML = navigator.maxTouchPoints > 0 ?
-                '<br>Controls:<br>Left Joystick: Move<br>Right Joystick: Look<br>Spacebar: Toggle Map' :
+                `<br>Controls:<br>${isJoystickSwapped ? 'Right' : 'Left'} Joystick: Move<br>${isJoystickSwapped ? 'Left' : 'Right'} Joystick: Look<br>Spacebar: Toggle Map` :
                 '<br>Controls:<br>WASD/Arrows: Move<br>Mouse: Look<br>Spacebar: Toggle Map';
         }
 
