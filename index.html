@@ -37,7 +37,7 @@
             text-align: center;
             border-radius: 10px;
         }
-        #gameOverOverlay button, #swap-joysticks, #toggle-stones, #reveal-map {
+        #gameOverOverlay button, #swap-joysticks, #toggle-stones, #reveal-map, #sprint-button, #attack-button {
             padding: 5px 10px;
             font-size: 12px;
             margin-top: 5px;
@@ -47,7 +47,7 @@
             border: none;
             border-radius: 5px;
         }
-        #gameOverOverlay button:hover, #swap-joysticks:hover, #toggle-stones:hover, #reveal-map:hover { background-color: #cc3333; }
+        #gameOverOverlay button:hover, #swap-joysticks:hover, #toggle-stones:hover, #reveal-map:hover, #sprint-button:hover, #attack-button:hover { background-color: #cc3333; }
         #joystick-move, #joystick-camera {
             position: absolute;
             bottom: 20px;
@@ -71,6 +71,14 @@
             transform: translate(-50%, -50%);
             touch-action: none;
         }
+        #sprint-button, #attack-button {
+            position: absolute;
+            bottom: 130px;
+            right: 20px;
+            width: 60px;
+            padding: 5px;
+        }
+        #attack-button { right: 90px; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/controls/PointerLockControls.js"></script>
@@ -82,9 +90,10 @@
         Level: <span id="level">1</span><br>
         Score: <span id="score">0</span><br>
         Health: <span id="health">100</span><br>
-        Coins: <span id="coins">0/0 found</span><br>
+        Shards: <span id="shards">0/0 found</span><br>
         Light Sources: <span id="lightSources">0/0 found</span><br>
         Flashlight: <span id="flashlightMeter">100%</span><br>
+        <span id="shardMessage"></span>
         <div id="controls-info"></div>
         <button id="swap-joysticks" style="display: none;">Swap Joysticks</button>
         <button id="toggle-stones">Show Path Stones</button>
@@ -102,6 +111,8 @@
     <div id="joystick-camera">
         <div id="joystick-camera-knob"></div>
     </div>
+    <button id="sprint-button" style="display: none;">Sprint</button>
+    <button id="attack-button" style="display: none;">Attack</button>
 
     <script>
         const minimapCanvas = document.getElementById('minimap');
@@ -112,9 +123,10 @@
             level: document.getElementById('level'),
             score: document.getElementById('score'),
             health: document.getElementById('health'),
-            coins: document.getElementById('coins'),
+            shards: document.getElementById('shards'),
             lightSources: document.getElementById('lightSources'),
             flashlightMeter: document.getElementById('flashlightMeter'),
+            shardMessage: document.getElementById('shardMessage'),
             controlsInfo: document.getElementById('controls-info'),
             swapJoysticks: document.getElementById('swap-joysticks'),
             toggleStones: document.getElementById('toggle-stones'),
@@ -127,11 +139,15 @@
         const joystickMoveKnob = document.getElementById('joystick-move-knob');
         const joystickCamera = document.getElementById('joystick-camera');
         const joystickCameraKnob = document.getElementById('joystick-camera-knob');
+        const sprintButton = document.getElementById('sprint-button');
+        const attackButton = document.getElementById('attack-button');
 
         let isJoystickSwapped = false;
         if (navigator.maxTouchPoints > 0) {
             joystickMove.style.display = 'block';
             joystickCamera.style.display = 'block';
+            sprintButton.style.display = 'block';
+            attackButton.style.display = 'block';
             hud.swapJoysticks.style.display = 'block';
             hud.swapJoysticks.addEventListener('click', () => {
                 isJoystickSwapped = !isJoystickSwapped;
@@ -139,6 +155,10 @@
                 joystickMove.style.right = isJoystickSwapped ? '20px' : 'auto';
                 joystickCamera.style.left = isJoystickSwapped ? '20px' : 'auto';
                 joystickCamera.style.right = isJoystickSwapped ? 'auto' : '20px';
+                sprintButton.style.left = isJoystickSwapped ? '20px' : 'auto';
+                sprintButton.style.right = isJoystickSwapped ? 'auto' : '20px';
+                attackButton.style.left = isJoystickSwapped ? '90px' : 'auto';
+                attackButton.style.right = isJoystickSwapped ? 'auto' : '90px';
             });
         }
 
@@ -149,11 +169,11 @@
         const maxMazeSize = 100;
         let mazeWidth = baseMazeSize;
         let mazeHeight = baseMazeSize;
-        let player = { x: tileSize, z: tileSize, speed: 0.05, lastX: tileSize, lastZ: tileSize, health: 100 };
+        let player = { x: tileSize, z: tileSize, speed: 0.025, lastX: tileSize, lastZ: tileSize, health: 100 }; // Speed reduced by 50%
         let goal = { x: 0, z: 0 };
         let maze = [];
         let trees = [];
-        let coins = [];
+        let shards = []; // Changed from coins
         let lightSources = [];
         let ghosts = [];
         let score = 0;
@@ -172,8 +192,8 @@
         let stonesVisible = false;
         let stoneMeshes = [];
         let lastBeamTime = 0;
-        const beamCooldown = 1000; // 1 second in ms
-        const ghostAttackRange = 5 * tileSize; // 5 tiles
+        const beamCooldown = 1000;
+        const ghostAttackRange = 5 * tileSize;
 
         const minGroundHeight = 0.0;
         const maxGroundHeight = 0.1;
@@ -207,7 +227,7 @@
         const controls = new THREE.PointerLockControls(camera, renderer.domElement);
         document.addEventListener('click', () => controls.lock());
 
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, shootBeam = false;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, sprint = false, shootBeam = false;
         document.addEventListener('keydown', (e) => {
             if (!gameOver) {
                 switch (e.code) {
@@ -219,7 +239,8 @@
                     case 'KeyA': moveLeft = true; break;
                     case 'ArrowRight':
                     case 'KeyD': moveRight = true; break;
-                    case 'KeyE': shootBeam = true; break;
+                    case 'ShiftLeft':
+                    case 'ShiftRight': sprint = true; break;
                     case 'Space': if (!isMinimapExpanded) toggleMinimap(); break;
                 }
             }
@@ -234,9 +255,16 @@
                 case 'KeyA': moveLeft = false; break;
                 case 'ArrowRight':
                 case 'KeyD': moveRight = false; break;
-                case 'KeyE': shootBeam = false; break;
+                case 'ShiftLeft':
+                case 'ShiftRight': sprint = false; break;
                 case 'Space': if (isMinimapExpanded) toggleMinimap(); break;
             }
+        });
+        document.addEventListener('mousedown', (e) => {
+            if (!gameOver && e.button === 0) shootBeam = true; // Left-click
+        });
+        document.addEventListener('mouseup', (e) => {
+            if (e.button === 0) shootBeam = false;
         });
 
         let moveJoystickActive = false, cameraJoystickActive = false;
@@ -260,7 +288,6 @@
                         cameraJoystickActive = true;
                         cameraJoystickDeltaX = touch.clientX - centerX;
                         cameraJoystickDeltaY = touch.clientY - centerY;
-                        shootBeam = true; // Tap camera joystick to shoot
                     }
                     updateJoystickPosition(knobElement, touch.clientX, touch.clientY, rect);
                     e.preventDefault();
@@ -302,7 +329,6 @@
                         cameraJoystickActive = false;
                         cameraJoystickDeltaX = 0;
                         cameraJoystickDeltaY = 0;
-                        shootBeam = false;
                     }
                     knobElement.style.left = '50%';
                     knobElement.style.top = '50%';
@@ -310,6 +336,11 @@
                 }
             });
         }
+
+        sprintButton.addEventListener('touchstart', () => sprint = true);
+        sprintButton.addEventListener('touchend', () => sprint = false);
+        attackButton.addEventListener('touchstart', () => shootBeam = true);
+        attackButton.addEventListener('touchend', () => shootBeam = false);
 
         function updateJoystickPosition(knob, x, y, rect) {
             const knobX = x - rect.left - 20;
@@ -525,7 +556,7 @@
             goal.x = goalX * tileSize;
             goal.z = goalZ * tileSize;
 
-            coins = [];
+            shards = [];
             for (let z = 1; z < mazeHeight - 1; z++) {
                 for (let x = 1; x < mazeWidth - 1; x++) {
                     if (maze[z][x] === 0) {
@@ -535,7 +566,7 @@
                         if (maze[z-1][x] === 2) groundCount++;
                         if (maze[z+1][x] === 2) groundCount++;
                         if (groundCount === 3) {
-                            coins.push({ x: x * tileSize, z: z * tileSize, collected: false });
+                            shards.push({ x: x * tileSize, z: z * tileSize, collected: false });
                         }
                     }
                 }
@@ -548,21 +579,22 @@
             }
 
             ghosts = [];
-            coins.forEach(coin => {
-                const coinX = Math.floor(coin.x / tileSize);
-                const coinZ = Math.floor(coin.z / tileSize);
+            shards.forEach(shard => {
+                const shardX = Math.floor(shard.x / tileSize);
+                const shardZ = Math.floor(shard.z / tileSize);
                 const spawnOptions = [];
                 for (let dz = -1; dz <= 1; dz++) {
                     for (let dx = -1; dx <= 1; dx++) {
-                        const newX = coinX + dx;
-                        const newZ = coinZ + dz;
+                        const newX = shardX + dx;
+                        const newZ = shardZ + dz;
+                        const distToStart = Math.sqrt((newX - startX) ** 2 + (newZ - startZ) ** 2);
                         if (newX >= 0 && newX < mazeWidth && newZ >= 0 && newZ < mazeHeight &&
-                            (maze[newZ][newX] === 0 || maze[newZ][newX] === 2)) {
+                            (maze[newZ][newX] === 0 || maze[newZ][newX] === 2) && distToStart > 5) { // 5-tile safe radius
                             spawnOptions.push({ x: newX * tileSize, z: newZ * tileSize });
                         }
                     }
                 }
-                if (spawnOptions.length > 0 && Math.random() < 0.5) { // 50% chance per coin
+                if (spawnOptions.length > 0 && Math.random() < 0.5) {
                     const spawn = spawnOptions[Math.floor(Math.random() * spawnOptions.length)];
                     const ghostGeometry = new THREE.SphereGeometry(tileSize / 3, 16, 16);
                     const ghostMaterial = new THREE.MeshPhongMaterial({ 
@@ -574,17 +606,17 @@
                     });
                     const ghost = new THREE.Mesh(ghostGeometry, ghostMaterial);
                     ghost.position.set(spawn.x + tileSize / 2, tileSize / 2, spawn.z + tileSize / 2);
-                    scene.add(ghost); // Ensure ghost is added to scene
+                    scene.add(ghost);
                     ghosts.push({ 
                         mesh: ghost, 
-                        spawnX: spawn.x, // Store initial spawn position
+                        spawnX: spawn.x,
                         spawnZ: spawn.z,
                         x: spawn.x, 
                         z: spawn.z, 
                         health: 50, 
                         speed: 0.03, 
                         lastAttack: 0, 
-                        attackCooldown: 2000 // 2 seconds
+                        attackCooldown: 2000 
                     });
                 }
             });
@@ -676,19 +708,19 @@
                     const stone = new THREE.Mesh(stoneGeometry, stoneMaterial);
                     stone.rotation.x = -Math.PI / 2;
                     stone.position.set(p.x * tileSize + tileSize / 2, 0.01, p.z * tileSize + tileSize / 2);
-                    stone.visible = false; // Hidden by default
+                    stone.visible = false;
                     stoneMeshes.push(stone);
                     scene.add(stone);
                 }
             });
 
-            const coinGeometry = new THREE.TetrahedronGeometry(tileSize / 4, 0);
-            const coinMaterial = new THREE.MeshPhongMaterial({ color: 0xffffaa, specular: 0x111111, shininess: 5 });
-            coins.forEach(coin => {
-                const coinMesh = new THREE.Mesh(coinGeometry, coinMaterial);
-                coinMesh.position.set(coin.x + tileSize / 2, tileSize / 4, coin.z + tileSize / 2);
-                coin.mesh = coinMesh;
-                scene.add(coinMesh);
+            const shardGeometry = new THREE.TetrahedronGeometry(tileSize / 4, 0);
+            const shardMaterial = new THREE.MeshPhongMaterial({ color: 0xffffaa, specular: 0x111111, shininess: 5 });
+            shards.forEach(shard => {
+                const shardMesh = new THREE.Mesh(shardGeometry, shardMaterial);
+                shardMesh.position.set(shard.x + tileSize / 2, tileSize / 4, shard.z + tileSize / 2);
+                shard.mesh = shardMesh;
+                scene.add(shardMesh);
             });
 
             const lightSourceGeometry = new THREE.OctahedronGeometry(tileSize / 6, 0);
@@ -703,16 +735,21 @@
             });
 
             const goalGeometry = new THREE.DodecahedronGeometry(tileSize / 2, 0);
-            const goalMaterial = new THREE.MeshPhongMaterial({ color: 0x4444ff, specular: 0x111111, shininess: 5 });
+            const goalMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x220033, // Dark purple base
+                transparent: true, 
+                opacity: 0.7, 
+                specular: 0x111111, 
+                shininess: 5, 
+                emissive: 0x220033, 
+                emissiveIntensity: 0 
+            });
             const goalMesh = new THREE.Mesh(goalGeometry, goalMaterial);
             goalMesh.position.set(goal.x + tileSize / 2, tileSize / 2, goal.z + tileSize / 2);
             goal.mesh = goalMesh;
             scene.add(goalMesh);
 
-            // Re-add ghosts to ensure they’re in the scene
-            ghosts.forEach(ghost => {
-                scene.add(ghost.mesh);
-            });
+            ghosts.forEach(ghost => scene.add(ghost.mesh));
 
             camera.position.set(player.x + playerSize / 2, tileSize / 2, player.z + playerSize / 2);
             camera.rotation.set(0, 0, 0);
@@ -729,6 +766,7 @@
             moveBackward = false;
             moveLeft = false;
             moveRight = false;
+            sprint = false;
             shootBeam = false;
             flashlightPower = 100;
             flashlight.intensity = maxFlashlightIntensity;
@@ -740,7 +778,7 @@
             drawMinimap();
             updateHUD();
 
-            console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Optimal path: ${optimalPath.length}, Coins: ${coins.length}, Lights: ${lightSources.length}, Ghosts: ${ghosts.length}`);
+            console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Optimal path: ${optimalPath.length}, Shards: ${shards.length}, Lights: ${lightSources.length}, Ghosts: ${ghosts.length}`);
         }
 
         function canMoveTo(newX, newZ) {
@@ -786,12 +824,12 @@
             beam.rotateX(Math.PI / 2);
             scene.add(beam);
 
-            setTimeout(() => scene.remove(beam), 100); // Beam visible for 0.1s
+            setTimeout(() => scene.remove(beam), 100);
 
             ghosts.forEach(ghost => {
                 const ghostPos = new THREE.Vector3(ghost.x + tileSize / 2, tileSize / 2, ghost.z + tileSize / 2);
                 const distToBeam = ghostPos.distanceTo(start) + ghostPos.distanceTo(end) - start.distanceTo(end);
-                if (distToBeam < 0.5 && ghostPos.distanceTo(start) < 5 * tileSize) { // Within beam range and width
+                if (distToBeam < 0.5 && ghostPos.distanceTo(start) < 5 * tileSize) {
                     ghost.health -= 25;
                     if (ghost.health <= 0) {
                         scene.remove(ghost.mesh);
@@ -804,11 +842,11 @@
         function updateGhosts() {
             const currentTime = Date.now();
             ghosts.forEach(ghost => {
-                const dx = player.x - ghost.spawnX; // Use spawnX for distance check
-                const dz = player.z - ghost.spawnZ; // Use spawnZ for distance check
+                const dx = player.x - ghost.spawnX;
+                const dz = player.z - ghost.spawnZ;
                 const distance = Math.sqrt(dx * dx + dz * dz);
 
-                if (distance < ghostAttackRange) { // Only move if player is within range
+                if (distance < ghostAttackRange) {
                     const moveDx = player.x - ghost.x;
                     const moveDz = player.z - ghost.z;
                     const moveDistance = Math.sqrt(moveDx * moveDx + moveDz * moveDz);
@@ -832,7 +870,6 @@
                     }
                 }
 
-                // Update ghost position with slight bobbing
                 ghost.mesh.position.set(ghost.x + tileSize / 2, tileSize / 2 + Math.sin(currentTime * 0.002) * 0.2, ghost.z + tileSize / 2);
             });
         }
@@ -890,12 +927,13 @@
                 direction.y = 0;
                 direction.normalize();
 
-                if (moveForward) velocity.add(direction.clone().multiplyScalar(player.speed));
-                if (moveBackward) velocity.sub(direction.clone().multiplyScalar(player.speed));
+                const currentSpeed = sprint ? player.speed * 1.25 : player.speed; // Sprint increases speed by 25%
+                if (moveForward) velocity.add(direction.clone().multiplyScalar(currentSpeed));
+                if (moveBackward) velocity.sub(direction.clone().multiplyScalar(currentSpeed));
                 const right = new THREE.Vector3();
                 right.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
-                if (moveLeft) velocity.sub(right.clone().multiplyScalar(player.speed));
-                if (moveRight) velocity.add(right.clone().multiplyScalar(player.speed));
+                if (moveLeft) velocity.sub(right.clone().multiplyScalar(currentSpeed));
+                if (moveRight) velocity.add(right.clone().multiplyScalar(currentSpeed));
 
                 if (moveJoystickActive) {
                     const joystickMagnitude = Math.sqrt(moveJoystickDeltaX * moveJoystickDeltaX + moveJoystickDeltaY * moveJoystickDeltaY);
@@ -904,7 +942,7 @@
                         const joystickDirY = moveJoystickDeltaY / joystickMagnitude;
                         const forwardComponent = direction.clone().multiplyScalar(-joystickDirY);
                         const rightComponent = right.clone().multiplyScalar(joystickDirX);
-                        velocity.add(forwardComponent).add(rightComponent).normalize().multiplyScalar(player.speed * (joystickMagnitude / joystickRadius));
+                        velocity.add(forwardComponent).add(rightComponent).normalize().multiplyScalar(currentSpeed * (joystickMagnitude / joystickRadius));
                     }
                 }
             }
@@ -934,14 +972,19 @@
 
             updateGhosts();
 
-            coins.forEach(coin => {
-                if (!coin.collected && Math.abs(player.x - coin.x) < tileSize && Math.abs(player.z - coin.z) < tileSize) {
-                    coin.collected = true;
+            shards.forEach(shard => {
+                if (!shard.collected && Math.abs(player.x - shard.x) < tileSize && Math.abs(player.z - shard.z) < tileSize) {
+                    shard.collected = true;
                     score += 10 * (levelsCompleted + 1);
-                    scene.remove(coin.mesh);
+                    scene.remove(shard.mesh);
                 }
             });
-            coins = coins.filter(coin => !coin.collected);
+
+            const collectedShards = shards.filter(shard => shard.collected).length;
+            const totalShards = shards.length;
+            goal.mesh.material.emissiveIntensity = collectedShards / totalShards;
+            const purpleValue = Math.floor(0x33 + (0xcc - 0x33) * (collectedShards / totalShards));
+            goal.mesh.material.emissive.setHex((purpleValue << 16) | (0x00 << 8) | purpleValue);
 
             lightSources.forEach(light => {
                 if (!light.collected && Math.abs(player.x - light.x) < tileSize && Math.abs(player.z - light.z) < tileSize) {
@@ -990,10 +1033,12 @@
             }
 
             if (Math.abs(player.x - goal.x) < tileSize && Math.abs(player.z - goal.z) < tileSize) {
-                levelsCompleted++;
-                score += 50 * levelsCompleted;
-                alert(`Level ${levelsCompleted} Completed! Total Score: ${score}`);
-                generateMaze();
+                if (collectedShards === totalShards) {
+                    levelsCompleted++;
+                    score += 50 * levelsCompleted;
+                    alert(`Level ${levelsCompleted} Completed! Total Score: ${score}`);
+                    generateMaze();
+                }
             }
         }
 
@@ -1001,16 +1046,17 @@
             hud.level.textContent = levelsCompleted + 1;
             hud.score.textContent = score;
             hud.health.textContent = Math.max(0, Math.floor(player.health));
-            const totalCoins = coins.length + coins.filter(c => c.collected).length;
-            const foundCoins = coins.filter(c => c.collected).length;
-            hud.coins.textContent = `${foundCoins}/${totalCoins} found`;
+            const totalShards = shards.length;
+            const foundShards = shards.filter(s => s.collected).length;
+            hud.shards.textContent = `${foundShards}/${totalShards} found`;
+            hud.shardMessage.textContent = foundShards < totalShards ? `Find ${totalShards - foundShards} more shards to complete the level!` : "All shards collected!";
             const totalLights = lightSources.length + lightSources.filter(l => l.collected).length;
             const foundLights = lightSources.filter(l => l.collected).length;
             hud.lightSources.textContent = `${foundLights}/${totalLights} found`;
             hud.flashlightMeter.textContent = `${Math.floor(flashlightPower)}%`;
             hud.controlsInfo.innerHTML = navigator.maxTouchPoints > 0 ?
-                `<br>Controls:<br>${isJoystickSwapped ? 'Right' : 'Left'} Joystick: Move<br>${isJoystickSwapped ? 'Left' : 'Right'} Joystick: Look/Shoot<br>Spacebar: Toggle Map` :
-                '<br>Controls:<br>WASD/Arrows: Move<br>Mouse: Look<br>E: Shoot<br>Spacebar: Toggle Map';
+                `<br>Controls:<br>${isJoystickSwapped ? 'Right' : 'Left'} Joystick: Move<br>${isJoystickSwapped ? 'Left' : 'Right'} Joystick: Look<br>Sprint Button: Sprint<br>Attack Button: Shoot<br>Spacebar: Toggle Map` :
+                '<br>Controls:<br>WASD/Arrows: Move<br>Mouse: Look<br>Left-Click: Shoot<br>Shift: Sprint<br>Spacebar: Toggle Map';
         }
 
         function drawMinimap() {
@@ -1044,10 +1090,10 @@
                     }
                 }
 
-                coins.forEach(coin => {
-                    if (!coin.collected && visitedTiles.has(`${Math.floor(coin.x / tileSize)},${Math.floor(coin.z / tileSize)}`)) {
+                shards.forEach(shard => {
+                    if (!shard.collected && visitedTiles.has(`${Math.floor(shard.x / tileSize)},${Math.floor(shard.z / tileSize)}`)) {
                         minimapCtx.fillStyle = 'yellow';
-                        minimapCtx.fillRect((coin.x / tileSize) * tileWidth, (coin.z / tileSize) * tileHeight, tileWidth, tileHeight);
+                        minimapCtx.fillRect((shard.x / tileSize) * tileWidth, (shard.z / tileSize) * tileHeight, tileWidth, tileHeight);
                     }
                 });
 
@@ -1092,12 +1138,12 @@
                     }
                 }
 
-                coins.forEach(coin => {
-                    const coinX = Math.floor(coin.x / tileSize);
-                    const coinZ = Math.floor(coin.z / tileSize);
-                    if (!coin.collected && visitedTiles.has(`${coinX},${coinZ}`) && coinX >= minX && coinX <= maxX && coinZ >= minZ && coinZ <= maxZ) {
+                shards.forEach(shard => {
+                    const shardX = Math.floor(shard.x / tileSize);
+                    const shardZ = Math.floor(shard.z / tileSize);
+                    if (!shard.collected && visitedTiles.has(`${shardX},${shardZ}`) && shardX >= minX && shardX <= maxX && shardZ >= minZ && shardZ <= maxZ) {
                         minimapCtx.fillStyle = 'yellow';
-                        minimapCtx.fillRect((coinX - playerTileX + 5) * tileWidth, (coinZ - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
+                        minimapCtx.fillRect((shardX - playerTileX + 5) * tileWidth, (shardZ - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
                     }
                 });
 
