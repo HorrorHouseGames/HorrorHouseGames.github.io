@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Endless Maze Explorer 3D - Haunted Forest - Test</title>
+    <title>Endless Maze Explorer 3D - Haunted Forest</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
@@ -23,6 +23,7 @@
             background: rgba(0, 0, 0, 0.7);
             padding: 10px;
             border-radius: 5px;
+            font-size: 14px;
         }
         #gameOverOverlay {
             display: none;
@@ -47,18 +48,19 @@
             border-radius: 5px;
         }
         #gameOverOverlay button:hover { background-color: #cc3333; }
-        #joystick {
+        #joystick-move, #joystick-camera {
             position: absolute;
             bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
             width: 100px;
             height: 100px;
             background: rgba(255, 255, 255, 0.3);
             border-radius: 50%;
             touch-action: none;
+            display: none; /* Hidden by default */
         }
-        #joystick-knob {
+        #joystick-move { left: 20px; }
+        #joystick-camera { right: 20px; }
+        #joystick-move-knob, #joystick-camera-knob {
             position: absolute;
             width: 40px;
             height: 40px;
@@ -81,7 +83,8 @@
         Score: <span id="score">0</span><br>
         Coins: <span id="coins">0</span><br>
         Light Sources: <span id="lightSources">0</span><br>
-        Flashlight: <span id="flashlightMeter">100%</span>
+        Flashlight: <span id="flashlightMeter">100%</span><br>
+        <div id="controls-info"></div>
     </div>
     <div id="gameOverOverlay">
         <h2>Game Over</h2>
@@ -89,8 +92,11 @@
         <p>Final Score: <span id="finalScore">0</span></p>
         <button onclick="resetGame()">Restart</button>
     </div>
-    <div id="joystick">
-        <div id="joystick-knob"></div>
+    <div id="joystick-move">
+        <div id="joystick-move-knob"></div>
+    </div>
+    <div id="joystick-camera">
+        <div id="joystick-camera-knob"></div>
     </div>
 
     <script>
@@ -103,16 +109,25 @@
             score: document.getElementById('score'),
             coins: document.getElementById('coins'),
             lightSources: document.getElementById('lightSources'),
-            flashlightMeter: document.getElementById('flashlightMeter')
+            flashlightMeter: document.getElementById('flashlightMeter'),
+            controlsInfo: document.getElementById('controls-info')
         };
         const gameOverOverlay = document.getElementById('gameOverOverlay');
         const finalScoreSpan = document.getElementById('finalScore');
-        const joystick = document.getElementById('joystick');
-        const joystickKnob = document.getElementById('joystick-knob');
+        const joystickMove = document.getElementById('joystick-move');
+        const joystickMoveKnob = document.getElementById('joystick-move-knob');
+        const joystickCamera = document.getElementById('joystick-camera');
+        const joystickCameraKnob = document.getElementById('joystick-camera-knob');
+
+        // Show joysticks only on touch devices
+        if (navigator.maxTouchPoints > 0) {
+            joystickMove.style.display = 'block';
+            joystickCamera.style.display = 'block';
+        }
 
         // Game variables
         const tileSize = 1;
-        const playerSize = 0.3; // Reduced from 0.4 to fix collision
+        const playerSize = 0.3;
         let mazeWidth = 25;
         let mazeHeight = 25;
         const sizeIncrease = 5;
@@ -126,6 +141,7 @@
         let levelsCompleted = 0;
         let mainPath = [];
         let deadEnds = [];
+        let optimalPath = [];
         let flashlightPower = 100;
         const maxFlashlightIntensity = 2.5;
         const minFlashlightDistance = 1;
@@ -175,7 +191,7 @@
         const controls = new THREE.PointerLockControls(camera, renderer.domElement);
         document.addEventListener('click', () => controls.lock());
 
-        // Keyboard controls (WASD and Arrow keys)
+        // Keyboard controls
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         document.addEventListener('keydown', (e) => {
             if (!gameOver) {
@@ -206,66 +222,87 @@
             }
         });
 
-        // Mobile joystick controls
-        let joystickActive = false;
-        let joystickDeltaX = 0;
-        let joystickDeltaY = 0;
-        const joystickRadius = 50; // Half of joystick width/height
+        // Joystick controls
+        let moveJoystickActive = false, cameraJoystickActive = false;
+        let moveJoystickDeltaX = 0, moveJoystickDeltaY = 0;
+        let cameraJoystickDeltaX = 0, cameraJoystickDeltaY = 0;
+        const joystickRadius = 50;
 
-        joystick.addEventListener('touchstart', (e) => {
-            if (!gameOver && e.touches.length === 1) {
-                joystickActive = true;
-                const touch = e.touches[0];
-                const rect = joystick.getBoundingClientRect();
-                const centerX = rect.left + joystickRadius;
-                const centerY = rect.top + joystickRadius;
-                joystickDeltaX = touch.clientX - centerX;
-                joystickDeltaY = touch.clientY - centerY;
-                updateJoystickPosition(touch.clientX, touch.clientY);
-                e.preventDefault();
-            }
-        });
-
-        joystick.addEventListener('touchmove', (e) => {
-            if (!gameOver && joystickActive && e.touches.length === 1) {
-                const touch = e.touches[0];
-                const rect = joystick.getBoundingClientRect();
-                const centerX = rect.left + joystickRadius;
-                const centerY = rect.top + joystickRadius;
-                let dx = touch.clientX - centerX;
-                let dy = touch.clientY - centerY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance > joystickRadius) {
-                    dx = dx * joystickRadius / distance;
-                    dy = dy * joystickRadius / distance;
+        function setupJoystick(joystickElement, knobElement, isMove) {
+            joystickElement.addEventListener('touchstart', (e) => {
+                if (!gameOver && e.touches.length <= 2) {
+                    const touch = e.touches[0];
+                    const rect = joystickElement.getBoundingClientRect();
+                    const centerX = rect.left + joystickRadius;
+                    const centerY = rect.top + joystickRadius;
+                    if (isMove) {
+                        moveJoystickActive = true;
+                        moveJoystickDeltaX = touch.clientX - centerX;
+                        moveJoystickDeltaY = touch.clientY - centerY;
+                    } else {
+                        cameraJoystickActive = true;
+                        cameraJoystickDeltaX = touch.clientX - centerX;
+                        cameraJoystickDeltaY = touch.clientY - centerY;
+                    }
+                    updateJoystickPosition(knobElement, touch.clientX, touch.clientY, rect);
+                    e.preventDefault();
                 }
-                joystickDeltaX = dx;
-                joystickDeltaY = dy;
-                updateJoystickPosition(centerX + dx, centerY + dy);
-                e.preventDefault();
-            }
-        });
+            });
 
-        joystick.addEventListener('touchend', (e) => {
-            if (!gameOver) {
-                joystickActive = false;
-                joystickDeltaX = 0;
-                joystickDeltaY = 0;
-                joystickKnob.style.left = '50%';
-                joystickKnob.style.top = '50%';
-                e.preventDefault();
-            }
-        });
+            joystickElement.addEventListener('touchmove', (e) => {
+                if (!gameOver && e.touches.length <= 2) {
+                    const touch = e.touches[isMove && moveJoystickActive ? 0 : 1] || e.touches[0];
+                    const rect = joystickElement.getBoundingClientRect();
+                    const centerX = rect.left + joystickRadius;
+                    const centerY = rect.top + joystickRadius;
+                    let dx = touch.clientX - centerX;
+                    let dy = touch.clientY - centerY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > joystickRadius) {
+                        dx = dx * joystickRadius / distance;
+                        dy = dy * joystickRadius / distance;
+                    }
+                    if (isMove) {
+                        moveJoystickDeltaX = dx;
+                        moveJoystickDeltaY = dy;
+                    } else {
+                        cameraJoystickDeltaX = dx;
+                        cameraJoystickDeltaY = dy;
+                    }
+                    updateJoystickPosition(knobElement, centerX + dx, centerY + dy, rect);
+                    e.preventDefault();
+                }
+            });
 
-        function updateJoystickPosition(x, y) {
-            const rect = joystick.getBoundingClientRect();
-            const knobX = x - rect.left - 20; // 20 is half knob width
-            const knobY = y - rect.top - 20;  // 20 is half knob height
-            joystickKnob.style.left = `${knobX}px`;
-            joystickKnob.style.top = `${knobY}px`;
+            joystickElement.addEventListener('touchend', (e) => {
+                if (!gameOver) {
+                    if (isMove) {
+                        moveJoystickActive = false;
+                        moveJoystickDeltaX = 0;
+                        moveJoystickDeltaY = 0;
+                    } else {
+                        cameraJoystickActive = false;
+                        cameraJoystickDeltaX = 0;
+                        cameraJoystickDeltaY = 0;
+                    }
+                    knobElement.style.left = '50%';
+                    knobElement.style.top = '50%';
+                    e.preventDefault();
+                }
+            });
         }
 
-        // Maze generation with single path and dead ends
+        function updateJoystickPosition(knob, x, y, rect) {
+            const knobX = x - rect.left - 20;
+            const knobY = y - rect.top - 20;
+            knob.style.left = `${knobX}px`;
+            knob.style.top = `${knobY}px`;
+        }
+
+        setupJoystick(joystickMove, joystickMoveKnob, true);
+        setupJoystick(joystickCamera, joystickCameraKnob, false);
+
+        // Maze generation with optimal path
         function generateMaze() {
             mazeWidth = 25 + sizeIncrease * levelsCompleted;
             mazeHeight = 25 + sizeIncrease * levelsCompleted;
@@ -312,6 +349,33 @@
 
             carvePath(startX, startZ);
             maze[goalZ][goalX] = 0;
+
+            // Find optimal path using BFS
+            function findOptimalPath() {
+                const queue = [{ x: startX, z: startZ, path: [{ x: startX, z: startZ }] }];
+                const visited = new Set([`${startX},${startZ}`]);
+                const directions = [
+                    { dx: 1, dz: 0 }, { dx: -1, dz: 0 },
+                    { dx: 0, dz: 1 }, { dx: 0, dz: -1 }
+                ];
+
+                while (queue.length > 0) {
+                    const { x, z, path } = queue.shift();
+                    if (x === goalX && z === goalZ) return path;
+
+                    for (const dir of directions) {
+                        const newX = x + dir.dx;
+                        const newZ = z + dir.dz;
+                        const key = `${newX},${newZ}`;
+                        if (newX >= 0 && newX < mazeWidth && newZ >= 0 && newZ < mazeHeight &&
+                            maze[newZ][newX] === 0 && !visited.has(key)) {
+                            visited.add(key);
+                            queue.push({ x: newX, z: newZ, path: [...path, { x: newX, z: newZ }] });
+                        }
+                    }
+                }
+                return [];
+            }
 
             mainPath = [];
             deadEnds = [];
@@ -373,6 +437,8 @@
                 }
             }
 
+            optimalPath = findOptimalPath();
+
             player.x = startX * tileSize;
             player.z = startZ * tileSize;
             player.lastX = player.x;
@@ -380,13 +446,28 @@
             goal.x = goalX * tileSize;
             goal.z = goalZ * tileSize;
 
-            coins = deadEnds.map(de => ({ x: de.x * tileSize, z: de.z * tileSize, collected: false }));
-            lightSources = [];
-            for (let i = 0; i < mainPath.length; i += Math.floor(Math.random() * 6) + 5) {
-                const p = mainPath[i];
-                if (!deadEnds.some(de => de.x === p.x && de.z === p.z)) {
-                    lightSources.push({ x: p.x * tileSize, z: p.z * tileSize, collected: false });
+            // Coins on ground tiles with 3 walls
+            coins = [];
+            for (let z = 0; z < mazeHeight; z++) {
+                for (let x = 0; x < mazeWidth; x++) {
+                    if (maze[z][x] === 2) {
+                        let wallCount = 0;
+                        if (x > 0 && maze[z][x-1] === 1) wallCount++;
+                        if (x < mazeWidth-1 && maze[z][x+1] === 1) wallCount++;
+                        if (z > 0 && maze[z-1][x] === 1) wallCount++;
+                        if (z < mazeHeight-1 && maze[z+1][x] === 1) wallCount++;
+                        if (wallCount === 3) {
+                            coins.push({ x: x * tileSize, z: z * tileSize, collected: false });
+                        }
+                    }
                 }
+            }
+
+            // Lights every 5 tiles on optimal path
+            lightSources = [];
+            for (let i = 0; i < optimalPath.length; i += 5) {
+                const p = optimalPath[i];
+                lightSources.push({ x: p.x * tileSize, z: p.z * tileSize, collected: false });
             }
 
             visitedTiles = new Set();
@@ -462,13 +543,11 @@
                 }
             }
 
+            // Stones only on optimal path
             mainPath.forEach(p => {
-                const isDeadEnd = deadEnds.some(de => de.x === p.x && de.z === p.z);
+                const isOptimal = optimalPath.some(op => op.x === p.x && op.z === p.z);
                 let color;
-                if (isDeadEnd) {
-                    const greyVal = 128 + Math.floor(Math.random() * (211 - 128));
-                    color = (greyVal << 16) | (greyVal << 8) | greyVal;
-                } else {
+                if (isOptimal) {
                     const greenR = 31 + Math.floor(Math.random() * 16);
                     const greenG = 63 + Math.floor(Math.random() * 16);
                     color = (greenR << 16) | (greenG << 8) | 31;
@@ -520,8 +599,9 @@
             gameOver = false;
 
             drawMinimap();
+            updateHUD();
 
-            console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Dead ends: ${deadEnds.length}, Ground buffer: ${groundBuffer}`);
+            console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Optimal path: ${optimalPath.length}, Coins: ${coins.length}, Lights: ${lightSources.length}`);
         }
 
         // Updated collision check
@@ -580,7 +660,7 @@
             if (gameOver) return;
 
             const velocity = new THREE.Vector3();
-            if (moveForward || moveBackward || moveLeft || moveRight || joystickActive) {
+            if (moveForward || moveBackward || moveLeft || moveRight || moveJoystickActive) {
                 const direction = new THREE.Vector3();
                 camera.getWorldDirection(direction);
                 direction.y = 0;
@@ -593,16 +673,22 @@
                 if (moveLeft) velocity.sub(right.clone().multiplyScalar(player.speed));
                 if (moveRight) velocity.add(right.clone().multiplyScalar(player.speed));
 
-                if (joystickActive) {
-                    const joystickMagnitude = Math.sqrt(joystickDeltaX * joystickDeltaX + joystickDeltaY * joystickDeltaY);
+                if (moveJoystickActive) {
+                    const joystickMagnitude = Math.sqrt(moveJoystickDeltaX * moveJoystickDeltaX + moveJoystickDeltaY * moveJoystickDeltaY);
                     if (joystickMagnitude > 0) {
-                        const joystickDirX = joystickDeltaX / joystickMagnitude;
-                        const joystickDirY = joystickDeltaY / joystickMagnitude;
+                        const joystickDirX = moveJoystickDeltaX / joystickMagnitude;
+                        const joystickDirY = moveJoystickDeltaY / joystickMagnitude;
                         const forwardComponent = direction.clone().multiplyScalar(-joystickDirY);
                         const rightComponent = right.clone().multiplyScalar(joystickDirX);
                         velocity.add(forwardComponent).add(rightComponent).normalize().multiplyScalar(player.speed * (joystickMagnitude / joystickRadius));
                     }
                 }
+            }
+
+            if (cameraJoystickActive) {
+                const rotateSpeed = 0.005;
+                controls.getObject().rotation.y -= cameraJoystickDeltaX * rotateSpeed;
+                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - cameraJoystickDeltaY * rotateSpeed));
             }
 
             if (velocity.length() > 0) {
@@ -682,13 +768,16 @@
             }
         }
 
-        // Update HUD
+        // Update HUD with controls
         function updateHUD() {
             hud.level.textContent = levelsCompleted + 1;
             hud.score.textContent = score;
-            hud.coins.textContent = deadEnds.length - coins.filter(c => !c.collected).length;
-            hud.lightSources.textContent = lightSources.length - lightSources.filter(l => !l.collected).length;
+            hud.coins.textContent = coins.filter(c => !c.collected).length;
+            hud.lightSources.textContent = lightSources.filter(l => !l.collected).length;
             hud.flashlightMeter.textContent = `${Math.floor(flashlightPower)}%`;
+            hud.controlsInfo.innerHTML = navigator.maxTouchPoints > 0 ?
+                '<br>Controls:<br>Left Joystick: Move<br>Right Joystick: Look<br>Spacebar: Toggle Map' :
+                '<br>Controls:<br>WASD/Arrows: Move<br>Mouse: Look<br>Spacebar: Toggle Map';
         }
 
         // Draw minimap with 180-degree rotation
@@ -713,8 +802,11 @@
                                 minimapCtx.fillStyle = 'gray';
                                 minimapCtx.fillRect(x * tileWidth, z * tileHeight, tileWidth, tileHeight);
                             } else if (maze[z][x] === 0) {
-                                const isDeadEnd = deadEnds.some(de => de.x === x && de.z === z);
-                                minimapCtx.fillStyle = isDeadEnd ? '#a0a0a0' : '#2f4f2f';
+                                const isOptimal = optimalPath.some(op => op.x === x && op.z === z);
+                                minimapCtx.fillStyle = isOptimal ? '#2f4f2f' : '#a0a0a0';
+                                minimapCtx.fillRect(x * tileWidth, z * tileHeight, tileWidth, tileHeight);
+                            } else if (maze[z][x] === 2) {
+                                minimapCtx.fillStyle = '#4f4f1f';
                                 minimapCtx.fillRect(x * tileWidth, z * tileHeight, tileWidth, tileHeight);
                             }
                         }
@@ -750,8 +842,11 @@
                                 minimapCtx.fillStyle = 'gray';
                                 minimapCtx.fillRect((x - playerTileX + 5) * tileWidth, (z - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
                             } else if (maze[z][x] === 0) {
-                                const isDeadEnd = deadEnds.some(de => de.x === x && de.z === z);
-                                minimapCtx.fillStyle = isDeadEnd ? '#a0a0a0' : '#2f4f2f';
+                                const isOptimal = optimalPath.some(op => op.x === x && op.z === z);
+                                minimapCtx.fillStyle = isOptimal ? '#2f4f2f' : '#a0a0a0';
+                                minimapCtx.fillRect((x - playerTileX + 5) * tileWidth, (z - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
+                            } else if (maze[z][x] === 2) {
+                                minimapCtx.fillStyle = '#4f4f1f';
                                 minimapCtx.fillRect((x - playerTileX + 5) * tileWidth, (z - playerTileZ + 5) * tileHeight, tileWidth, tileHeight);
                             }
                         }
