@@ -220,6 +220,7 @@
 
                 const minimapCanvas = document.getElementById('minimap');
                 const minimapCtx = minimapCanvas.getContext('2d');
+                if (!minimapCtx) throw new Error('Minimap canvas context not initialized');
                 minimapCanvas.width = 140;
                 minimapCanvas.height = 140;
 
@@ -349,10 +350,14 @@
                 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
                 const renderer = new THREE.WebGLRenderer({ antialias: true });
                 renderer.setSize(window.innerWidth, window.innerHeight);
-                renderer.setClearColor(0x000000);
+                renderer.setClearColor(0x222222); // Slightly lighter for visibility
                 document.body.appendChild(renderer.domElement);
 
-                scene.fog = new THREE.Fog(0x000000, 8, 12);
+                // Add ambient light to ensure scene visibility
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Soft gray light
+                scene.add(ambientLight);
+
+                scene.fog = new THREE.Fog(0x000000, 10, 20); // Adjusted fog for better visibility
 
                 const flashlight = new THREE.SpotLight(0xaaaaaa, maxFlashlightIntensity, maxFlashlightDistance, Math.PI / 3, 0.9);
                 flashlight.position.set(0, 0.5, 0);
@@ -374,7 +379,6 @@
                 let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, sprint = false, shootBeam = false;
                 document.addEventListener('keydown', (e) => {
                     if (!gameOver) {
-
                         switch (e.code) {
                             case 'ArrowUp':
                             case 'KeyW': moveForward = true; break;
@@ -526,7 +530,7 @@
                             if (pathTiles >= maxPathTiles) return;
 
                             const directions = [
-                                { dx: 2, dz: 0 }, { dx: -2, dz: 0 }, // Reduced step size to 2
+                                { dx: 2, dz: 0 }, { dx: -2, dz: 0 },
                                 { dx: 0, dz: 2 }, { dx: 0, dz: -2 }
                             ].sort(() => Math.random() - 0.5);
 
@@ -574,7 +578,6 @@
                                 }
                             }
 
-                            // Carve a direct path from closest path tile to goal
                             let currentX = closestPathX;
                             let currentZ = closestPathZ;
                             while (currentX !== goalX || currentZ !== goalZ) {
@@ -637,7 +640,6 @@
                                 }
                             }
 
-                            // Fallback: Carve a direct path if BFS fails
                             let currentX = startX;
                             let currentZ = startZ;
                             while (currentX !== goalX || currentZ !== goalZ) {
@@ -650,8 +652,7 @@
                                     maze[currentZ][currentX] = 0;
                                 }
                             }
-                            // Retry BFS after carving fallback path
-                            return findOptimalPath(); // Recursive call, should succeed now
+                            return findOptimalPath();
                         }
 
                         mainPath = [];
@@ -787,6 +788,7 @@
                         while (scene.children.length > 1) {
                             scene.remove(scene.children[1]);
                         }
+                        scene.add(ambientLight); // Re-add ambient light after clearing scene
 
                         const groundShape = new THREE.Shape();
                         groundShape.moveTo(-tileSize / 2, -tileSize / 2);
