@@ -288,16 +288,9 @@
         renderer.setClearColor(0x000000);
         document.getElementById('gameCanvas').appendChild(renderer.domElement);
 
-        // Add test cube to verify rendering
-        const testCube = new THREE.Mesh(
-            new THREE.BoxGeometry(1, 1, 1),
-            new THREE.MeshBasicMaterial({ color: 0xff0000 })
-        );
-        testCube.position.set(0, 0.5, 0);
-        scene.add(testCube);
-        console.log("Test cube added to scene");
-
-        scene.fog = new THREE.Fog(0x000000, 8, 12);
+        // Add ambient light for desktop visibility
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.2); // Dim light
+        scene.add(ambientLight);
 
         const flashlight = new THREE.SpotLight(0xaaaaaa, maxFlashlightIntensity, maxFlashlightDistance, Math.PI / 3, 0.9);
         flashlight.position.set(0, 0.5, 0);
@@ -306,6 +299,8 @@
         camera.add(flashlight);
         camera.add(flashlight.target);
         scene.add(camera);
+
+        scene.fog = new THREE.Fog(0x000000, 8, 12);
 
         const controls = new THREE.PointerLockControls(camera, renderer.domElement);
         document.addEventListener('click', () => controls.lock());
@@ -355,76 +350,114 @@
         let cameraJoystickDeltaX = 0, cameraJoystickDeltaY = 0;
         const joystickRadius = 50;
 
-        function setupJoystick(joystickElement, knobElement, isMoveDefault) {
-            const isMove = isJoystickSwapped ? !isMoveDefault : isMoveDefault;
-            joystickElement.addEventListener('touchstart', (e) => {
-                if (!gameOver && e.touches.length <= 2) {
-                    const touch = e.touches[0];
-                    const rect = joystickElement.getBoundingClientRect();
-                    const centerX = rect.left + joystickRadius;
-                    const centerY = rect.top + joystickRadius;
-                    if (isMove) {
-                        moveJoystickActive = true;
-                        moveJoystickDeltaX = touch.clientX - centerX;
-                        moveJoystickDeltaY = touch.clientY - centerY;
-                    } else {
-                        cameraJoystickActive = true;
-                        cameraJoystickDeltaX = touch.clientX - centerX;
-                        cameraJoystickDeltaY = 0;
-                    }
-                    updateJoystickPosition(knobElement, touch.clientX, touch.clientY, rect);
-                    e.preventDefault();
-                }
-            });
+        // Mobile setup before game loop
+        let isHudCollapsed = false;
+        let isJoystickSwapped = false;
+        if (navigator.maxTouchPoints > 0) {
+            console.log("Setting up mobile controls");
+            joystickMove.style.display = 'block';
+            joystickCamera.style.display = 'block';
+            sprintButton.style.display = 'block';
+            attackButton.style.display = 'block';
+            toggleHudButton.style.display = 'block';
+            hud.swapJoysticks.style.display = 'block';
+            isHudCollapsed = true;
+            hudElement.classList.add('collapsed');
 
-            joystickElement.addEventListener('touchmove', (e) => {
-                if (!gameOver && e.touches.length <= 2) {
-                    const touch = e.touches[isMove && moveJoystickActive ? 0 : 1] || e.touches[0];
-                    const rect = joystickElement.getBoundingClientRect();
-                    const centerX = rect.left + joystickRadius;
-                    const centerY = rect.top + joystickRadius;
-                    let dx = touch.clientX - centerX;
-                    let dy = isMove ? touch.clientY - centerY : 0;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance > joystickRadius) {
-                        dx = dx * joystickRadius / distance;
-                        dy = dy * joystickRadius / distance;
+            function setupJoystick(joystickElement, knobElement, isMoveDefault) {
+                const isMove = isJoystickSwapped ? !isMoveDefault : isMoveDefault;
+                joystickElement.addEventListener('touchstart', (e) => {
+                    if (!gameOver && e.touches.length <= 2) {
+                        const touch = e.touches[0];
+                        const rect = joystickElement.getBoundingClientRect();
+                        const centerX = rect.left + joystickRadius;
+                        const centerY = rect.top + joystickRadius;
+                        if (isMove) {
+                            moveJoystickActive = true;
+                            moveJoystickDeltaX = touch.clientX - centerX;
+                            moveJoystickDeltaY = touch.clientY - centerY;
+                        } else {
+                            cameraJoystickActive = true;
+                            cameraJoystickDeltaX = touch.clientX - centerX;
+                            cameraJoystickDeltaY = 0;
+                        }
+                        updateJoystickPosition(knobElement, touch.clientX, touch.clientY, rect);
+                        e.preventDefault();
                     }
-                    if (isMove) {
-                        moveJoystickDeltaX = dx;
-                        moveJoystickDeltaY = dy;
-                    } else {
-                        cameraJoystickDeltaX = dx;
-                        cameraJoystickDeltaY = 0;
-                    }
-                    updateJoystickPosition(knobElement, centerX + dx, centerY + dy, rect);
-                    e.preventDefault();
-                }
-            });
+                });
 
-            joystickElement.addEventListener('touchend', (e) => {
-                if (!gameOver) {
-                    if (isMove) {
-                        moveJoystickActive = false;
-                        moveJoystickDeltaX = 0;
-                        moveJoystickDeltaY = 0;
-                    } else {
-                        cameraJoystickActive = false;
-                        cameraJoystickDeltaX = 0;
-                        cameraJoystickDeltaY = 0;
+                joystickElement.addEventListener('touchmove', (e) => {
+                    if (!gameOver && e.touches.length <= 2) {
+                        const touch = e.touches[isMove && moveJoystickActive ? 0 : 1] || e.touches[0];
+                        const rect = joystickElement.getBoundingClientRect();
+                        const centerX = rect.left + joystickRadius;
+                        const centerY = rect.top + joystickRadius;
+                        let dx = touch.clientX - centerX;
+                        let dy = isMove ? touch.clientY - centerY : 0;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance > joystickRadius) {
+                            dx = dx * joystickRadius / distance;
+                            dy = dy * joystickRadius / distance;
+                        }
+                        if (isMove) {
+                            moveJoystickDeltaX = dx;
+                            moveJoystickDeltaY = dy;
+                        } else {
+                            cameraJoystickDeltaX = dx;
+                            cameraJoystickDeltaY = 0;
+                        }
+                        updateJoystickPosition(knobElement, centerX + dx, centerY + dy, rect);
+                        e.preventDefault();
                     }
-                    knobElement.style.left = '50%';
-                    knobElement.style.top = '50%';
-                    e.preventDefault();
-                }
-            });
-        }
+                });
 
-        function updateJoystickPosition(knob, x, y, rect) {
-            const knobX = x - rect.left - 20;
-            const knobY = y - rect.top - 20;
-            knob.style.left = `${knobX}px`;
-            knob.style.top = `${knobY}px`;
+                joystickElement.addEventListener('touchend', (e) => {
+                    if (!gameOver) {
+                        if (isMove) {
+                            moveJoystickActive = false;
+                            moveJoystickDeltaX = 0;
+                            moveJoystickDeltaY = 0;
+                        } else {
+                            cameraJoystickActive = false;
+                            cameraJoystickDeltaX = 0;
+                            cameraJoystickDeltaY = 0;
+                        }
+                        knobElement.style.left = '50%';
+                        knobElement.style.top = '50%';
+                        e.preventDefault();
+                    }
+                });
+            }
+
+            function updateJoystickPosition(knob, x, y, rect) {
+                const knobX = x - rect.left - 20;
+                const knobY = y - rect.top - 20;
+                knob.style.left = `${knobX}px`;
+                knob.style.top = `${knobY}px`;
+            }
+
+            setupJoystick(joystickMove, joystickMoveKnob, true);
+            setupJoystick(joystickCamera, joystickCameraKnob, false);
+            sprintButton.addEventListener('touchstart', () => { if (stamina > 0) sprint = true; });
+            sprintButton.addEventListener('touchend', () => sprint = false);
+            attackButton.addEventListener('touchstart', () => shootBeam = true);
+            attackButton.addEventListener('touchend', () => shootBeam = false);
+            hud.swapJoysticks.addEventListener('click', () => {
+                isJoystickSwapped = !isJoystickSwapped;
+                joystickMove.style.left = isJoystickSwapped ? 'auto' : '20px';
+                joystickMove.style.right = isJoystickSwapped ? '20px' : 'auto';
+                joystickCamera.style.left = isJoystickSwapped ? '20px' : 'auto';
+                joystickCamera.style.right = isJoystickSwapped ? 'auto' : '20px';
+                sprintButton.style.left = isJoystickSwapped ? '20px' : 'auto';
+                sprintButton.style.right = isJoystickSwapped ? 'auto' : '20px';
+                attackButton.style.left = isJoystickSwapped ? '90px' : 'auto';
+                attackButton.style.right = isJoystickSwapped ? 'auto' : '90px';
+            });
+            toggleHudButton.addEventListener('click', () => {
+                isHudCollapsed = !isHudCollapsed;
+                hudElement.classList.toggle('collapsed', isHudCollapsed);
+                toggleHudButton.style.left = isHudCollapsed ? '10px' : '150px';
+            });
         }
 
         function generateMaze() {
@@ -635,6 +668,7 @@
             shards = [];
             for (let z = 1; z < mazeHeight - 1; z++) {
                 for (let x = 1; x < mazeWidth - 1; x++) {
+
                     if (maze[z][x] === 0) {
                         let groundCount = 0;
                         if (maze[z][x-1] === 2) groundCount++;
@@ -703,8 +737,8 @@
             visitedTiles.add(`${startX},${startZ}`);
             stoneMeshes = [];
 
-            while (scene.children.length > 1) {
-                scene.remove(scene.children[1]);
+            while (scene.children.length > 2) { // Keep camera and ambient light
+                scene.remove(scene.children[2]);
             }
 
             const groundShape = new THREE.Shape();
@@ -871,7 +905,7 @@
             drawMinimap();
             updateHUD();
 
-            console.log(`Maze generation complete - Size: ${mazeWidth}x${mazeHeight}, Shards: ${shards.length}, Lights: ${lightSources.length}, Ghosts: ${ghosts.length}`);
+            console.log(`Maze generation complete - Size: ${mazeWidth}x${mazeHeight}, Shards: ${shards.length}, Lights: ${lightSources.length}, Ghosts: ${ghosts.length}, Scene objects: ${scene.children.length}`);
         }
 
         function canMoveTo(newX, newZ) {
@@ -1316,7 +1350,7 @@
         }
 
         function gameLoop() {
-            console.log("Game loop running");
+            console.log("Game loop running, WebGL available:", renderer.context !== null);
             update();
             renderer.render(scene, camera);
             updateHUD();
@@ -1325,43 +1359,6 @@
 
         generateMaze();
         gameLoop();
-
-        // Mobile setup after game initialization
-        let isHudCollapsed = false;
-        let isJoystickSwapped = false;
-        if (navigator.maxTouchPoints > 0) {
-            console.log("Setting up mobile controls");
-            joystickMove.style.display = 'block';
-            joystickCamera.style.display = 'block';
-            sprintButton.style.display = 'block';
-            attackButton.style.display = 'block';
-            toggleHudButton.style.display = 'block';
-            hud.swapJoysticks.style.display = 'block';
-            isHudCollapsed = true;
-            hudElement.classList.add('collapsed');
-            setupJoystick(joystickMove, joystickMoveKnob, true);
-            setupJoystick(joystickCamera, joystickCameraKnob, false);
-            sprintButton.addEventListener('touchstart', () => { if (stamina > 0) sprint = true; });
-            sprintButton.addEventListener('touchend', () => sprint = false);
-            attackButton.addEventListener('touchstart', () => shootBeam = true);
-            attackButton.addEventListener('touchend', () => shootBeam = false);
-            hud.swapJoysticks.addEventListener('click', () => {
-                isJoystickSwapped = !isJoystickSwapped;
-                joystickMove.style.left = isJoystickSwapped ? 'auto' : '20px';
-                joystickMove.style.right = isJoystickSwapped ? '20px' : 'auto';
-                joystickCamera.style.left = isJoystickSwapped ? '20px' : 'auto';
-                joystickCamera.style.right = isJoystickSwapped ? 'auto' : '20px';
-                sprintButton.style.left = isJoystickSwapped ? '20px' : 'auto';
-                sprintButton.style.right = isJoystickSwapped ? 'auto' : '20px';
-                attackButton.style.left = isJoystickSwapped ? '90px' : 'auto';
-                attackButton.style.right = isJoystickSwapped ? 'auto' : '90px';
-            });
-            toggleHudButton.addEventListener('click', () => {
-                isHudCollapsed = !isHudCollapsed;
-                hudElement.classList.toggle('collapsed', isHudCollapsed);
-                toggleHudButton.style.left = isHudCollapsed ? '10px' : '150px';
-            });
-        }
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
