@@ -4,12 +4,12 @@
     <title>Endless Maze Explorer 3D - Haunted Forest</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background: #000; } /* Ensure black background */
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background: #000; }
         #gameCanvas { 
             width: 100%; 
             height: 100vh; 
-            position: relative; /* Ensure canvas stays in flow */
-            z-index: 0; /* Base layer for renderer */
+            position: relative;
+            z-index: 0;
         }
         #minimap {
             border: 1px solid black;
@@ -19,7 +19,7 @@
             width: 200px;
             height: 200px;
             transition: all 0.5s ease;
-            z-index: 2; /* Above canvas */
+            z-index: 2;
         }
         #hud {
             position: absolute;
@@ -31,7 +31,7 @@
             border-radius: 5px;
             font-size: 14px;
             transition: transform 0.3s ease;
-            z-index: 2; /* Above canvas */
+            z-index: 2;
         }
         #hud.collapsed {
             transform: translateX(-100%);
@@ -49,7 +49,7 @@
             font-size: 12px;
             cursor: pointer;
             display: none;
-            z-index: 3; /* Above HUD */
+            z-index: 3;
         }
         #toggle-hud:hover { background: #cc3333; }
         #statusBars {
@@ -101,7 +101,7 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.5s;
-            z-index: 1; /* Below HUD but above canvas */
+            z-index: 1;
         }
         #gameOverOverlay button, #swap-joysticks, #toggle-stones, #reveal-map, #sprint-button, #attack-button {
             padding: 5px 10px;
@@ -228,35 +228,6 @@
             staminaBar: document.getElementById('staminaBar')
         };
 
-        let isHudCollapsed = false;
-        let isJoystickSwapped = false;
-        if (navigator.maxTouchPoints > 0) {
-            joystickMove.style.display = 'block';
-            joystickCamera.style.display = 'block';
-            sprintButton.style.display = 'block';
-            attackButton.style.display = 'block';
-            toggleHudButton.style.display = 'block';
-            hud.swapJoysticks.style.display = 'block';
-            isHudCollapsed = true; // Start collapsed on mobile
-            hudElement.classList.add('collapsed');
-            hud.swapJoysticks.addEventListener('click', () => {
-                isJoystickSwapped = !isJoystickSwapped;
-                joystickMove.style.left = isJoystickSwapped ? 'auto' : '20px';
-                joystickMove.style.right = isJoystickSwapped ? '20px' : 'auto';
-                joystickCamera.style.left = isJoystickSwapped ? '20px' : 'auto';
-                joystickCamera.style.right = isJoystickSwapped ? 'auto' : '20px';
-                sprintButton.style.left = isJoystickSwapped ? '20px' : 'auto';
-                sprintButton.style.right = isJoystickSwapped ? 'auto' : '20px';
-                attackButton.style.left = isJoystickSwapped ? '90px' : 'auto';
-                attackButton.style.right = isJoystickSwapped ? 'auto' : '90px';
-            });
-            toggleHudButton.addEventListener('click', () => {
-                isHudCollapsed = !isHudCollapsed;
-                hudElement.classList.toggle('collapsed', isHudCollapsed);
-                toggleHudButton.style.left = isHudCollapsed ? '10px' : '150px';
-            });
-        }
-
         const hudElement = document.getElementById('hud');
 
         const tileSize = 1;
@@ -314,8 +285,17 @@
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer();
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setClearColor(0x000000); // Ensure clear color is black
+        renderer.setClearColor(0x000000);
         document.getElementById('gameCanvas').appendChild(renderer.domElement);
+
+        // Add test cube to verify rendering
+        const testCube = new THREE.Mesh(
+            new THREE.BoxGeometry(1, 1, 1),
+            new THREE.MeshBasicMaterial({ color: 0xff0000 })
+        );
+        testCube.position.set(0, 0.5, 0);
+        scene.add(testCube);
+        console.log("Test cube added to scene");
 
         scene.fog = new THREE.Fog(0x000000, 8, 12);
 
@@ -440,11 +420,6 @@
             });
         }
 
-        sprintButton.addEventListener('touchstart', () => { if (stamina > 0) sprint = true; });
-        sprintButton.addEventListener('touchend', () => sprint = false);
-        attackButton.addEventListener('touchstart', () => shootBeam = true);
-        attackButton.addEventListener('touchend', () => shootBeam = false);
-
         function updateJoystickPosition(knob, x, y, rect) {
             const knobX = x - rect.left - 20;
             const knobY = y - rect.top - 20;
@@ -452,10 +427,8 @@
             knob.style.top = `${knobY}px`;
         }
 
-        setupJoystick(joystickMove, joystickMoveKnob, true);
-        setupJoystick(joystickCamera, joystickCameraKnob, false);
-
         function generateMaze() {
+            console.log("Starting maze generation");
             mazeWidth = Math.min(baseMazeSize + sizeIncrease * levelsCompleted, maxMazeSize);
             mazeHeight = mazeWidth;
 
@@ -898,7 +871,7 @@
             drawMinimap();
             updateHUD();
 
-            console.log(`Maze generated - Size: ${mazeWidth}x${mazeHeight}, Optimal path: ${optimalPath.length}, Shards: ${shards.length}, Lights: ${lightSources.length}, Ghosts: ${ghosts.length}`);
+            console.log(`Maze generation complete - Size: ${mazeWidth}x${mazeHeight}, Shards: ${shards.length}, Lights: ${lightSources.length}, Ghosts: ${ghosts.length}`);
         }
 
         function canMoveTo(newX, newZ) {
@@ -1343,6 +1316,7 @@
         }
 
         function gameLoop() {
+            console.log("Game loop running");
             update();
             renderer.render(scene, camera);
             updateHUD();
@@ -1351,6 +1325,43 @@
 
         generateMaze();
         gameLoop();
+
+        // Mobile setup after game initialization
+        let isHudCollapsed = false;
+        let isJoystickSwapped = false;
+        if (navigator.maxTouchPoints > 0) {
+            console.log("Setting up mobile controls");
+            joystickMove.style.display = 'block';
+            joystickCamera.style.display = 'block';
+            sprintButton.style.display = 'block';
+            attackButton.style.display = 'block';
+            toggleHudButton.style.display = 'block';
+            hud.swapJoysticks.style.display = 'block';
+            isHudCollapsed = true;
+            hudElement.classList.add('collapsed');
+            setupJoystick(joystickMove, joystickMoveKnob, true);
+            setupJoystick(joystickCamera, joystickCameraKnob, false);
+            sprintButton.addEventListener('touchstart', () => { if (stamina > 0) sprint = true; });
+            sprintButton.addEventListener('touchend', () => sprint = false);
+            attackButton.addEventListener('touchstart', () => shootBeam = true);
+            attackButton.addEventListener('touchend', () => shootBeam = false);
+            hud.swapJoysticks.addEventListener('click', () => {
+                isJoystickSwapped = !isJoystickSwapped;
+                joystickMove.style.left = isJoystickSwapped ? 'auto' : '20px';
+                joystickMove.style.right = isJoystickSwapped ? '20px' : 'auto';
+                joystickCamera.style.left = isJoystickSwapped ? '20px' : 'auto';
+                joystickCamera.style.right = isJoystickSwapped ? 'auto' : '20px';
+                sprintButton.style.left = isJoystickSwapped ? '20px' : 'auto';
+                sprintButton.style.right = isJoystickSwapped ? 'auto' : '20px';
+                attackButton.style.left = isJoystickSwapped ? '90px' : 'auto';
+                attackButton.style.right = isJoystickSwapped ? 'auto' : '90px';
+            });
+            toggleHudButton.addEventListener('click', () => {
+                isHudCollapsed = !isHudCollapsed;
+                hudElement.classList.toggle('collapsed', isHudCollapsed);
+                toggleHudButton.style.left = isHudCollapsed ? '10px' : '150px';
+            });
+        }
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
