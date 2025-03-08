@@ -176,7 +176,7 @@
         <h2>Game Over</h2>
         <p id="gameOverMessage">Your flashlight ran out of power!</p>
         <p>Final Score: <span id="finalScore">0</span></p>
-        <button onclick="resetGame()">Restart</button>
+        <button id="restart-button">Restart</button>
     </div>
     <div id="damageFlash"></div>
     <div id="joystick-move">
@@ -214,6 +214,7 @@
         const gameOverOverlay = document.getElementById('gameOverOverlay');
         const gameOverMessage = document.getElementById('gameOverMessage');
         const finalScoreSpan = document.getElementById('finalScore');
+        const restartButton = document.getElementById('restart-button');
         const damageFlash = document.getElementById('damageFlash');
         const joystickMove = document.getElementById('joystick-move');
         const joystickMoveKnob = document.getElementById('joystick-move-knob');
@@ -386,7 +387,7 @@
                             cameraJoystickDeltaX = 0; // No initial rotation
                             cameraJoystickDeltaY = 0;
                         }
-                        updateJoystickPosition(knobElement, centerX + dx, centerY + dy);
+                        updateJoystickPosition(knobElement, centerX + dx, centerY + dy, joystickElement);
                         e.preventDefault();
                     }
                 });
@@ -408,10 +409,10 @@
                             moveJoystickDeltaX = dx;
                             moveJoystickDeltaY = dy;
                         } else {
-                            cameraJoystickDeltaX = dx; // Only update on move
+                            cameraJoystickDeltaX = dx;
                             cameraJoystickDeltaY = 0;
                         }
-                        updateJoystickPosition(knobElement, centerX + dx, centerY + dy);
+                        updateJoystickPosition(knobElement, centerX + dx, centerY + dy, joystickElement);
                         e.preventDefault();
                     }
                 });
@@ -434,9 +435,11 @@
                 });
             }
 
-            function updateJoystickPosition(knob, x, y) {
-                knob.style.left = `${x - joystickMove.getBoundingClientRect().left}px`;
-                knob.style.top = `${y - joystickMove.getBoundingClientRect().top}px`;
+            function updateJoystickPosition(knob, x, y, joystickElement) {
+                const rect = joystickElement.getBoundingClientRect();
+                knob.style.left = `${x - rect.left}px`;
+                knob.style.top = `${y - rect.top}px`;
+                knob.style.display = 'block'; // Ensure knob stays visible
             }
 
             setupJoystick(joystickMove, joystickMoveKnob, true);
@@ -905,6 +908,7 @@
             hud.toggleStones.textContent = "Hide Path Stones";
 
             drawMinimap();
+
             updateHUD();
 
             console.log(`Maze generation complete - Size: ${mazeWidth}x${mazeHeight}, Shards: ${shards.length}, Lights: ${lightSources.length}, Ghosts: ${ghosts.length}, Scene objects: ${scene.children.length}`);
@@ -996,7 +1000,6 @@
                         const directionZ = moveDz / moveDistance;
                         ghost.x += directionX * ghost.speed;
                         ghost.z += directionZ * ghost.speed;
-
                     }
 
                     if (moveDistance < playerSize && currentTime - ghost.lastAttack > ghost.attackCooldown) {
@@ -1348,12 +1351,24 @@
             score = 0;
             levelsCompleted = 0;
             ghostsEliminated = 0;
+            gameOver = false;
             generateMaze();
-            controls.lock();
+            if (navigator.maxTouchPoints > 0) {
+                // Simulate click to lock controls on mobile
+                setTimeout(() => controls.lock(), 100);
+            } else {
+                controls.lock();
+            }
         }
 
+        restartButton.addEventListener('click', resetGame);
+        restartButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            resetGame();
+        });
+
         function gameLoop() {
-            console.log("Game loop running, WebGL available:", renderer.context !== null);
+            console.log("Game loop running, WebGL available:", !!renderer.getContext());
             update();
             renderer.render(scene, camera);
             updateHUD();
