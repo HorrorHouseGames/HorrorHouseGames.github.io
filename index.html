@@ -11,16 +11,9 @@
             position: absolute;
             top: 10px;
             right: 10px;
-            width: 140px; /* 200px * 0.7 */
-            height: 140px; /* 200px * 0.7 */
+            width: 200px;
+            height: 200px;
             transition: all 0.5s ease;
-        }
-        #minimap.centered {
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 280px; /* Larger when centered, still 30% less than a potential 400px */
-            height: 280px;
         }
         #hud {
             position: absolute;
@@ -36,7 +29,7 @@
         #hud.collapsed {
             transform: translateX(-100%);
         }
-        #toggle-hud, #toggle-map {
+        #toggle-hud {
             position: absolute;
             top: 10px;
             left: 10px;
@@ -50,12 +43,7 @@
             cursor: pointer;
             display: none;
         }
-        #toggle-map {
-            top: 50px;
-            background: #4444ff;
-        }
-        #toggle-hud:hover, #toggle-map:hover { background: #cc3333; }
-        #toggle-map:hover { background: #3333cc; }
+        #toggle-hud:hover { background: #cc3333; }
         #statusBars {
             position: absolute;
             bottom: 10px;
@@ -187,7 +175,6 @@
     <button id="sprint-button" style="display: none;">RUN</button>
     <button id="attack-button" style="display: none;">ATK</button>
     <button id="toggle-hud">☰</button>
-    <button id="toggle-map">🗺️</button>
     <div id="statusBars">
         <div class="statusBarContainer"><div id="healthBar" class="statusBar"></div></div>
         <div class="statusBarContainer"><div id="flashlightBar" class="statusBar"></div></div>
@@ -197,8 +184,8 @@
     <script>
         const minimapCanvas = document.getElementById('minimap');
         const minimapCtx = minimapCanvas.getContext('2d');
-        minimapCanvas.width = 140; // 30% smaller than 200
-        minimapCanvas.height = 140;
+        minimapCanvas.width = 200;
+        minimapCanvas.height = 200;
         const hud = {
             level: document.getElementById('level'),
             score: document.getElementById('score'),
@@ -222,7 +209,6 @@
         const sprintButton = document.getElementById('sprint-button');
         const attackButton = document.getElementById('attack-button');
         const toggleHudButton = document.getElementById('toggle-hud');
-        const toggleMapButton = document.getElementById('toggle-map');
         const statusBars = {
             healthBar: document.getElementById('healthBar'),
             flashlightBar: document.getElementById('flashlightBar'),
@@ -231,17 +217,13 @@
 
         let isHudCollapsed = false;
         let isJoystickSwapped = false;
-        let isMapCentered = false;
         if (navigator.maxTouchPoints > 0) {
             joystickMove.style.display = 'block';
             joystickCamera.style.display = 'block';
             sprintButton.style.display = 'block';
             attackButton.style.display = 'block';
             toggleHudButton.style.display = 'block';
-            toggleMapButton.style.display = 'block';
             hud.swapJoysticks.style.display = 'block';
-            isHudCollapsed = true; // HUD closed by default on mobile
-            hudElement.classList.add('collapsed');
             hud.swapJoysticks.addEventListener('click', () => {
                 isJoystickSwapped = !isJoystickSwapped;
                 joystickMove.style.left = isJoystickSwapped ? 'auto' : '20px';
@@ -256,15 +238,7 @@
             toggleHudButton.addEventListener('click', () => {
                 isHudCollapsed = !isHudCollapsed;
                 hudElement.classList.toggle('collapsed', isHudCollapsed);
-                toggleHudButton.style.left = isHudCollapsed ? '10px' : '150px';
-            });
-            toggleMapButton.addEventListener('click', () => {
-                isMapCentered = !isMapCentered;
-                minimapCanvas.classList.toggle('centered', isMapCentered);
-                minimapCanvas.width = isMapCentered ? 280 : 140;
-                minimapCanvas.height = isMapCentered ? 280 : 140;
-                toggleMapButton.textContent = isMapCentered ? '✖' : '🗺️';
-                drawMinimap();
+                toggleHudButton.style.left = isHudCollapsed ? '10px' : '150px'; // Adjust position when collapsed
             });
         }
 
@@ -400,7 +374,7 @@
                     } else {
                         cameraJoystickActive = true;
                         cameraJoystickDeltaX = touch.clientX - centerX;
-                        cameraJoystickDeltaY = 0;
+                        cameraJoystickDeltaY = 0; // Ignore vertical movement
                     }
                     updateJoystickPosition(knobElement, touch.clientX, touch.clientY, rect);
                     e.preventDefault();
@@ -414,7 +388,7 @@
                     const centerX = rect.left + joystickRadius;
                     const centerY = rect.top + joystickRadius;
                     let dx = touch.clientX - centerX;
-                    let dy = isMove ? touch.clientY - centerY : 0;
+                    let dy = isMove ? touch.clientY - centerY : 0; // Only move joystick for movement
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     if (distance > joystickRadius) {
                         dx = dx * joystickRadius / distance;
@@ -1023,13 +997,13 @@
 
         function toggleMinimap() {
             if (isMinimapExpanded) {
-                minimapCanvas.style.width = '140px';
-                minimapCanvas.style.height = '140px';
+                minimapCanvas.style.width = '200px';
+                minimapCanvas.style.height = '200px';
                 minimapCanvas.style.top = '10px';
                 minimapCanvas.style.right = '10px';
                 minimapCanvas.style.left = 'auto';
-                minimapCanvas.width = 140;
-                minimapCanvas.height = 140;
+                minimapCanvas.width = 200;
+                minimapCanvas.height = 200;
             } else {
                 const padding = 50;
                 const mapWidth = Math.min(window.innerWidth - 2 * padding, mazeWidth * 20);
@@ -1106,8 +1080,9 @@
             }
 
             if (cameraJoystickActive) {
-                const rotateSpeed = navigator.maxTouchPoints > 0 ? 0.0035 : 0.005; // 30% slower on mobile (0.005 * 0.7)
+                const rotateSpeed = 0.005;
                 controls.getObject().rotation.y -= cameraJoystickDeltaX * rotateSpeed;
+                // Removed vertical camera rotation
             }
 
             if (velocity.length() > 0) {
@@ -1217,15 +1192,15 @@
             hud.lightSources.textContent = `${foundLights}/${totalLights} found`;
             hud.ghostsEliminated.textContent = ghostsEliminated;
             hud.controlsInfo.innerHTML = navigator.maxTouchPoints > 0 ?
-                `<br>Controls:<br>${isJoystickSwapped ? 'Right' : 'Left'} Joystick: Move<br>${isJoystickSwapped ? 'Left' : 'Right'} Joystick: Turn<br>RUN Button: Sprint<br>ATK Button: Shoot<br>Map Button: Toggle Map` :
+                `<br>Controls:<br>${isJoystickSwapped ? 'Right' : 'Left'} Joystick: Move<br>${isJoystickSwapped ? 'Left' : 'Right'} Joystick: Turn<br>RUN Button: Sprint<br>ATK Button: Shoot<br>Spacebar: Toggle Map` :
                 '<br>Controls:<br>WASD/Arrows: Move<br>Mouse: Look<br>Left-Click: Shoot<br>Shift: Sprint<br>Spacebar: Toggle Map';
         }
 
         function drawMinimap() {
             const playerTileX = Math.floor(player.x / tileSize);
             const playerTileZ = Math.floor(player.z / tileSize);
-            const tileWidth = minimapCanvas.width / (isMapCentered ? mazeWidth : 10);
-            const tileHeight = minimapCanvas.height / (isMapCentered ? mazeHeight : 10);
+            const tileWidth = minimapCanvas.width / (isMinimapExpanded ? mazeWidth : 10);
+            const tileHeight = minimapCanvas.height / (isMinimapExpanded ? mazeHeight : 10);
 
             minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
 
@@ -1234,7 +1209,7 @@
             minimapCtx.rotate(Math.PI);
             minimapCtx.translate(-minimapCanvas.width / 2, -minimapCanvas.height / 2);
 
-            if (isMapCentered) {
+            if (isMinimapExpanded) {
                 for (let z = 0; z < mazeHeight; z++) {
                     for (let x = 0; x < mazeWidth; x++) {
                         if (visitedTiles.has(`${x},${z}`)) {
@@ -1336,8 +1311,8 @@
             }
 
             minimapCtx.fillStyle = 'red';
-            const playerMapX = isMapCentered ? (playerTileX * tileWidth) : (5 * tileWidth);
-            const playerMapZ = isMapCentered ? (playerTileZ * tileHeight) : (5 * tileHeight);
+            const playerMapX = isMinimapExpanded ? (playerTileX * tileWidth) : (5 * tileWidth);
+            const playerMapZ = isMinimapExpanded ? (playerTileZ * tileHeight) : (5 * tileHeight);
             minimapCtx.fillRect(playerMapX, playerMapZ, tileWidth, tileHeight);
 
             minimapCtx.restore();
@@ -1350,17 +1325,6 @@
             ghostsEliminated = 0;
             generateMaze();
             controls.lock();
-            if (navigator.maxTouchPoints > 0) {
-                isHudCollapsed = true;
-                hudElement.classList.add('collapsed');
-                toggleHudButton.style.left = '10px';
-                isMapCentered = false;
-                minimapCanvas.classList.remove('centered');
-                minimapCanvas.width = 140;
-                minimapCanvas.height = 140;
-                toggleMapButton.textContent = '🗺️';
-                drawMinimap();
-            }
         }
 
         function gameLoop() {
