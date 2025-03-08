@@ -224,6 +224,8 @@
             attackButton.style.display = 'block';
             toggleHudButton.style.display = 'block';
             hud.swapJoysticks.style.display = 'block';
+            isHudCollapsed = true; // Start collapsed on mobile
+            hudElement.classList.add('collapsed'); // Apply collapsed state initially
             hud.swapJoysticks.addEventListener('click', () => {
                 isJoystickSwapped = !isJoystickSwapped;
                 joystickMove.style.left = isJoystickSwapped ? 'auto' : '20px';
@@ -1080,7 +1082,7 @@
             }
 
             if (cameraJoystickActive) {
-                const rotateSpeed = navigator.maxTouchPoints > 0 ? 0.005 * 0.7 : 0.005; // Reduced by 30% on mobile
+                const rotateSpeed = navigator.maxTouchPoints > 0 ? 0.0015 : 0.005; // Adjusted to 0.0015 for mobile
                 controls.getObject().rotation.y -= cameraJoystickDeltaX * rotateSpeed;
             }
 
