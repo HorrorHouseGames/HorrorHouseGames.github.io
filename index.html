@@ -168,7 +168,7 @@
 </head>
 <body>
     <canvas id="minimap"></canvas>
-    <div id="gameCanvas"></div>
+    <canvas id="gameCanvas"></canvas>
     <div id="hud">
         Level: <span id="level">1</span><br>
         Score: <span id="score">0</span><br>
@@ -210,7 +210,7 @@
         function showError(msg) {
             errorMessage.textContent = `Error: ${msg}`;
             errorMessage.style.display = 'block';
-            document.body.style.background = '#fff'; // Ensure visibility
+            document.body.style.background = '#fff';
         }
 
         try {
@@ -343,9 +343,10 @@
 
             const scene = new THREE.Scene();
             const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: document.getElementById('gameCanvas') });
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x000000);
+            document.body.appendChild(renderer.domElement); // Append directly to body
 
             scene.fog = new THREE.Fog(0x000000, 8, 12);
 
