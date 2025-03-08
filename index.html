@@ -2,14 +2,28 @@
 <html>
 <head>
     <title>Endless Maze Explorer 3D - Haunted Forest</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background: #000; }
+        html, body { 
+            margin: 0; 
+            padding: 0; 
+            height: 100%; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif; 
+            background: #000; 
+            -webkit-user-select: none; 
+            -moz-user-select: none; 
+            -ms-user-select: none; 
+            user-select: none; 
+            -webkit-touch-callout: none; 
+        }
         #gameCanvas { 
             width: 100%; 
-            height: 100vh; 
-            position: relative;
-            z-index: 0;
+            height: 100%; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 0; 
         }
         #minimap {
             border: 1px solid black;
@@ -112,6 +126,7 @@
             color: white;
             border: none;
             border-radius: 5px;
+            touch-action: manipulation;
         }
         #gameOverOverlay button:hover, #swap-joysticks:hover, #toggle-stones:hover, #reveal-map:hover, #sprint-button:hover, #attack-button:hover { background-color: #cc3333; }
         #joystick-move, #joystick-camera {
@@ -304,6 +319,12 @@
 
         const controls = new THREE.PointerLockControls(camera, renderer.domElement);
         document.addEventListener('click', () => controls.lock());
+        document.addEventListener('touchstart', (e) => {
+            if (!controls.isLocked && !gameOver) {
+                controls.lock();
+            }
+            e.preventDefault();
+        }, { passive: false });
 
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, sprint = false, shootBeam = false;
         document.addEventListener('keydown', (e) => {
@@ -384,13 +405,13 @@
                             moveJoystickDeltaY = dy;
                         } else {
                             cameraJoystickActive = true;
-                            cameraJoystickDeltaX = 0; // No initial rotation
+                            cameraJoystickDeltaX = 0;
                             cameraJoystickDeltaY = 0;
                         }
                         updateJoystickPosition(knobElement, centerX + dx, centerY + dy, joystickElement);
                         e.preventDefault();
                     }
-                });
+                }, { passive: false });
 
                 joystickElement.addEventListener('touchmove', (e) => {
                     if (!gameOver && e.touches.length <= 2) {
@@ -415,7 +436,7 @@
                         updateJoystickPosition(knobElement, centerX + dx, centerY + dy, joystickElement);
                         e.preventDefault();
                     }
-                });
+                }, { passive: false });
 
                 joystickElement.addEventListener('touchend', (e) => {
                     if (!gameOver) {
@@ -432,22 +453,22 @@
                         knobElement.style.top = '50%';
                         e.preventDefault();
                     }
-                });
+                }, { passive: false });
             }
 
             function updateJoystickPosition(knob, x, y, joystickElement) {
                 const rect = joystickElement.getBoundingClientRect();
                 knob.style.left = `${x - rect.left}px`;
                 knob.style.top = `${y - rect.top}px`;
-                knob.style.display = 'block'; // Ensure knob stays visible
+                knob.style.display = 'block';
             }
 
             setupJoystick(joystickMove, joystickMoveKnob, true);
             setupJoystick(joystickCamera, joystickCameraKnob, false);
-            sprintButton.addEventListener('touchstart', () => { if (stamina > 0) sprint = true; });
-            sprintButton.addEventListener('touchend', () => sprint = false);
-            attackButton.addEventListener('touchstart', () => shootBeam = true);
-            attackButton.addEventListener('touchend', () => shootBeam = false);
+            sprintButton.addEventListener('touchstart', (e) => { if (stamina > 0) sprint = true; e.preventDefault(); }, { passive: false });
+            sprintButton.addEventListener('touchend', (e) => { sprint = false; e.preventDefault(); }, { passive: false });
+            attackButton.addEventListener('touchstart', (e) => { shootBeam = true; e.preventDefault(); }, { passive: false });
+            attackButton.addEventListener('touchend', (e) => { shootBeam = false; e.preventDefault(); }, { passive: false });
             hud.swapJoysticks.addEventListener('click', () => {
                 isJoystickSwapped = !isJoystickSwapped;
                 joystickMove.style.left = isJoystickSwapped ? 'auto' : '20px';
@@ -908,7 +929,6 @@
             hud.toggleStones.textContent = "Hide Path Stones";
 
             drawMinimap();
-
             updateHUD();
 
             console.log(`Maze generation complete - Size: ${mazeWidth}x${mazeHeight}, Shards: ${shards.length}, Lights: ${lightSources.length}, Ghosts: ${ghosts.length}, Scene objects: ${scene.children.length}`);
@@ -1069,6 +1089,7 @@
 
         function update() {
             if (gameOver) return;
+
 
             const currentTime = Date.now();
             const deltaTime = 16;
@@ -1354,21 +1375,27 @@
             gameOver = false;
             generateMaze();
             if (navigator.maxTouchPoints > 0) {
-                // Simulate click to lock controls on mobile
-                setTimeout(() => controls.lock(), 100);
+                // Mobile: Prompt user to tap screen to lock controls
+                console.log("Tap screen to start playing after restart");
+                document.getElementById('gameCanvas').focus();
             } else {
                 controls.lock();
             }
         }
 
-        restartButton.addEventListener('click', resetGame);
-        restartButton.addEventListener('touchstart', (e) => {
+        restartButton.addEventListener('click', (e) => {
             e.preventDefault();
             resetGame();
         });
+        restartButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            resetGame();
+        }, { passive: false });
 
         function gameLoop() {
-            console.log("Game loop running, WebGL available:", !!renderer.getContext());
+            if (!renderer.getContext()) {
+                console.error("WebGL not available");
+            }
             update();
             renderer.render(scene, camera);
             updateHUD();
