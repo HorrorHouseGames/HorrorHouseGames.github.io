@@ -288,8 +288,7 @@
         renderer.setClearColor(0x000000);
         document.getElementById('gameCanvas').appendChild(renderer.domElement);
 
-        // Add ambient light for desktop visibility
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.2); // Dim light
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
         scene.add(ambientLight);
 
         const flashlight = new THREE.SpotLight(0xaaaaaa, maxFlashlightIntensity, maxFlashlightDistance, Math.PI / 3, 0.9);
@@ -350,7 +349,6 @@
         let cameraJoystickDeltaX = 0, cameraJoystickDeltaY = 0;
         const joystickRadius = 50;
 
-        // Mobile setup before game loop
         let isHudCollapsed = false;
         let isJoystickSwapped = false;
         if (navigator.maxTouchPoints > 0) {
@@ -372,16 +370,23 @@
                         const rect = joystickElement.getBoundingClientRect();
                         const centerX = rect.left + joystickRadius;
                         const centerY = rect.top + joystickRadius;
+                        let dx = touch.clientX - centerX;
+                        let dy = isMove ? touch.clientY - centerY : 0;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance > joystickRadius) {
+                            dx = dx * joystickRadius / distance;
+                            dy = dy * joystickRadius / distance;
+                        }
                         if (isMove) {
                             moveJoystickActive = true;
-                            moveJoystickDeltaX = touch.clientX - centerX;
-                            moveJoystickDeltaY = touch.clientY - centerY;
+                            moveJoystickDeltaX = dx;
+                            moveJoystickDeltaY = dy;
                         } else {
                             cameraJoystickActive = true;
-                            cameraJoystickDeltaX = touch.clientX - centerX;
+                            cameraJoystickDeltaX = 0; // No initial rotation
                             cameraJoystickDeltaY = 0;
                         }
-                        updateJoystickPosition(knobElement, touch.clientX, touch.clientY, rect);
+                        updateJoystickPosition(knobElement, centerX + dx, centerY + dy);
                         e.preventDefault();
                     }
                 });
@@ -403,10 +408,10 @@
                             moveJoystickDeltaX = dx;
                             moveJoystickDeltaY = dy;
                         } else {
-                            cameraJoystickDeltaX = dx;
+                            cameraJoystickDeltaX = dx; // Only update on move
                             cameraJoystickDeltaY = 0;
                         }
-                        updateJoystickPosition(knobElement, centerX + dx, centerY + dy, rect);
+                        updateJoystickPosition(knobElement, centerX + dx, centerY + dy);
                         e.preventDefault();
                     }
                 });
@@ -429,11 +434,9 @@
                 });
             }
 
-            function updateJoystickPosition(knob, x, y, rect) {
-                const knobX = x - rect.left - 20;
-                const knobY = y - rect.top - 20;
-                knob.style.left = `${knobX}px`;
-                knob.style.top = `${knobY}px`;
+            function updateJoystickPosition(knob, x, y) {
+                knob.style.left = `${x - joystickMove.getBoundingClientRect().left}px`;
+                knob.style.top = `${y - joystickMove.getBoundingClientRect().top}px`;
             }
 
             setupJoystick(joystickMove, joystickMoveKnob, true);
@@ -668,7 +671,6 @@
             shards = [];
             for (let z = 1; z < mazeHeight - 1; z++) {
                 for (let x = 1; x < mazeWidth - 1; x++) {
-
                     if (maze[z][x] === 0) {
                         let groundCount = 0;
                         if (maze[z][x-1] === 2) groundCount++;
@@ -737,7 +739,7 @@
             visitedTiles.add(`${startX},${startZ}`);
             stoneMeshes = [];
 
-            while (scene.children.length > 2) { // Keep camera and ambient light
+            while (scene.children.length > 2) {
                 scene.remove(scene.children[2]);
             }
 
@@ -994,6 +996,7 @@
                         const directionZ = moveDz / moveDistance;
                         ghost.x += directionX * ghost.speed;
                         ghost.z += directionZ * ghost.speed;
+
                     }
 
                     if (moveDistance < playerSize && currentTime - ghost.lastAttack > ghost.attackCooldown) {
