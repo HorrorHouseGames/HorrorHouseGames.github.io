@@ -1,11 +1,16 @@
 // Header Background Rotation
 const header = document.getElementById('header');
+const projectsHeader = document.getElementById('projects-header');
 const headerImages = JSON.parse(header.getAttribute('data-images'));
 let headerIndex = 0;
+
+// Set data-images for projectsHeader
+projectsHeader.setAttribute('data-images', JSON.stringify(headerImages));
 
 function rotateHeaderBackground() {
     headerIndex = (headerIndex + 1) % headerImages.length;
     header.style.backgroundImage = `url('${headerImages[headerIndex]}')`;
+    projectsHeader.style.backgroundImage = `url('${headerImages[headerIndex]}')`;
 }
 
 setInterval(rotateHeaderBackground, 5000); // Rotate every 5 seconds
@@ -78,4 +83,24 @@ projectImages.forEach(project => {
 
     // Initial call
     slideProjectImage();
+});
+
+// Hamburger Menu Toggle and Resize Handler
+const hamburger = document.querySelector('.hamburger');
+const navLinks = document.querySelector('.nav-links');
+const body = document.querySelector('body');
+
+hamburger.addEventListener('click', () => {
+    hamburger.classList.toggle('active');
+    navLinks.classList.toggle('active');
+    body.classList.toggle('menu-open');
+});
+
+// Reset menu state on window resize
+window.addEventListener('resize', () => {
+    if (window.innerWidth > 768) {
+        navLinks.classList.remove('active');
+        hamburger.classList.remove('active');
+        body.classList.remove('menu-open');
+    }
 });

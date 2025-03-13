@@ -10,14 +10,26 @@
     <!-- Header -->
     <header id="header" 
             data-images='["images/brick-wall-1.jpg", "images/brick-wall-2.jpg", "images/brick-wall-3.jpg"]'>
-        <h1>Horror House Games</h1>
-        <nav>
-            <a href="#home">Home</a>
-            <a href="#projects">Projects</a>
-            <a href="#about">About</a>
-            <a href="#contact">Contact</a>
+        <div class="header-content">
+            <img src="images/horror-house-games-logo.png" alt="Horror House Games Logo" class="header-logo">
+            <h1>Horror House Games</h1>
+        </div>
+        <nav class="nav-menu">
+            <div class="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
         </nav>
     </header>
+
+    <!-- Navigation Links -->
+    <ul class="nav-links">
+        <li><a href="#home">Home</a></li>
+        <li><a href="#projects">Projects</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+    </ul>
 
     <!-- Hero Section -->
     <section id="hero">
@@ -33,30 +45,38 @@
 
     <!-- Projects Section -->
     <section id="projects">
-        <h2>My Horror Projects</h2> <!-- Added heading for better structure -->
+        <h2 id="projects-header">My Horror Projects</h2>
         <div class="project-grid">
-            <div class="project">
-                <div class="project-image" 
-                     data-images='["images/game1-screenshot-1.jpg", "images/game1-screenshot-2.jpg", "images/game1-screenshot-3.jpg"]'>
-                    <div class="image-slider">
-                        <img src="images/game1-screenshot-1.jpg" alt="Game 1 Screenshot">
+            <a href="games/forest-of-shadows" class="project-link">
+                <div class="project">
+                    <div class="project-image" 
+                         data-images='["images/game1-screenshot-1.jpg", "images/game1-screenshot-2.jpg", "images/game1-screenshot-3.jpg"]'>
+                        <div class="image-slider">
+                            <img src="images/game1-screenshot-1.jpg" alt="Game 1 Screenshot">
+                        </div>
+                        <div class="project-overlay">
+                            <h3>Forest of Shadows</h3>
+                            <p>Escape the lurking horrors of the woods...</p>
+                            <span class="btn">Play Now</span>
+                        </div>
                     </div>
                 </div>
-                <h3>Forest of Shadows</h3>
-                <p>Escape the lurking horrors of the woods...</p>
-                <a href="games/forest-of-shadows" class="btn">Play Now</a>
-            </div>
-            <div class="project">
-                <div class="project-image" 
-                     data-images='["images/game2-screenshot-1.jpg", "images/game2-screenshot-2.jpg", "images/game2-screenshot-3.jpg"]'>
-                    <div class="image-slider">
-                        <img src="images/game2-screenshot-1.jpg" alt="Game 2 Screenshot">
+            </a>
+            <a href="games/haunted-manor" class="project-link">
+                <div class="project">
+                    <div class="project-image" 
+                         data-images='["images/game2-screenshot-1.jpg", "images/game2-screenshot-2.jpg", "images/game2-screenshot-3.jpg"]'>
+                        <div class="image-slider">
+                            <img src="images/game2-screenshot-1.jpg" alt="Game 2 Screenshot">
+                        </div>
+                        <div class="project-overlay">
+                            <h3>Haunted Manor</h3>
+                            <p>Survive the night in a cursed mansion...</p>
+                            <span class="btn">Play Now</span>
+                        </div>
                     </div>
                 </div>
-                <h3>Haunted Manor</h3>
-                <p>Survive the night in a cursed mansion...</p>
-                <a href="games/haunted-manor" class="btn">Play Now</a>
-            </div>
+            </a>
         </div>
     </section>
 
