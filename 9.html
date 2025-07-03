@@ -1,0 +1,1568 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HorrorHouseGames</title>
+  <!-- Include SheetJS for XLSX processing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Import Orbitron font -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: linear-gradient(135deg, #0a0a1a, #1c2526);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: 'Orbitron', monospace;
+      color: #fff;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    .content {
+      z-index: 2;
+      text-align: center;
+      padding: 20px;
+      max-width: 800px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 10px;
+      transition: opacity 0.3s ease;
+    }
+    .content.fade-out {
+      opacity: 0;
+    }
+    .content.fade-in {
+      opacity: 1;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      font-family: 'Orbitron', monospace;
+      font-weight: 700;
+    }
+    p, ul, li, a {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      font-family: 'Orbitron', monospace;
+      font-weight: 400;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+    li {
+      margin: 0.5rem 0;
+    }
+    a {
+      color: #ff4d4d;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      padding: 10px;
+      border-radius: 5px;
+      pointer-events: none;
+      z-index: 3;
+      max-width: 200px;
+      font-size: 0.9rem;
+      font-family: 'Orbitron', monospace;
+      display: none;
+    }
+    .profile-menu {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      border: 2px solid #ff4d4d;
+      border-radius: 10px;
+      z-index: 4;
+      display: none;
+      font-family: 'Orbitron', monospace;
+      color: #fff;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow: auto;
+    }
+    .profile-menu .container {
+      display: flex;
+      flex-direction: row;
+    }
+    .profile-menu .tabs {
+      width: 30%;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+    }
+    .profile-menu .tab {
+      background: #ccc;
+      color: #000;
+      border: none;
+      padding: 10px;
+      margin: 5px 0;
+      border-radius: 5px;
+      font-family: 'Orbitron', monospace;
+      cursor: pointer;
+      font-size: 0.9rem;
+      text-align: left;
+    }
+    .profile-menu .tab.active {
+      background: #ff4d4d;
+      color: #fff;
+    }
+    .profile-menu .tab:hover {
+      background: #ff4d4d;
+      color: #fff;
+    }
+    .profile-menu .tab-content {
+      display: none;
+      width: 70%;
+      padding: 20px;
+    }
+    .profile-menu .tab-content.active {
+      display: block;
+    }
+    .profile-menu button.close {
+      background: #ff4d4d;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-family: 'Orbitron', monospace;
+      cursor: pointer;
+      display: block;
+      margin: 1rem auto;
+    }
+    .profile-menu button.close:hover {
+      background: #cc3d3d;
+    }
+    .profile-menu ul {
+      margin: 1rem 0;
+    }
+    .hud {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-family: 'Orbitron', monospace;
+      font-size: 16px;
+      color: #fff;
+      z-index: 3;
+      text-align: center;
+    }
+    @media (max-width: 600px) {
+      .profile-menu .container {
+        flex-direction: column;
+      }
+      .profile-menu .tabs {
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: space-around;
+      }
+      .profile-menu .tab {
+        flex: 1 1 45%;
+        margin: 5px;
+        text-align: center;
+      }
+      .profile-menu .tab-content {
+        width: 100%;
+        padding: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="smokeCanvas"></canvas>
+  <div class="tooltip" id="tooltip"></div>
+  <div class="content fade-in" id="content">
+    <h1>Welcome to HorrorHouseGames</h1>
+    <p>DOMxHHG invites you to experience spine-chilling adventures crafted by HorrorHouseGames (HHG). Dive into our world of horror and suspense.</p>
+  </div>
+  <div class="hud" id="hud">Space Tokens: 0 | Raw Materials: 0 | Loyalty Tokens: 0 | XP: 0</div>
+  <div class="profile-menu" id="profileMenu">
+    <div class="container">
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('profile')">Profile</button>
+        <button class="tab" onclick="showTab('resources')">Resources</button>
+        <button class="tab" onclick="showTab('rewards')">Rewards</button>
+        <button class="tab" onclick="showTab('collectables')">Collectables</button>
+        <button class="tab" onclick="showTab('ship-stats')">Ship Stats</button>
+        <button class="tab" onclick="showTab('ship-appearance')">Appearance</button>
+        <button class="tab" onclick="showTab('ship-weapons')">Weapons</button>
+        <button class="tab" onclick="showTab('how-to-play')">How to Play</button>
+        <button class="tab" onclick="showTab('possible-rewards')">Possible Rewards</button>
+        <button class="tab" onclick="showTab('leveling-system')">Leveling System</button>
+      </div>
+      <div id="profile" class="tab-content active">
+        <h2>Profile</h2>
+        <p>Name: Space Explorer</p>
+        <p>Level: <span id="playerLevel">1</span></p>
+      </div>
+      <div id="resources" class="tab-content">
+        <h2>Resources</h2>
+        <p>Space Tokens: <span id="spaceTokens">0</span></p>
+        <p>Raw Materials: <span id="rawMaterials">0</span></p>
+        <p>Loyalty Tokens: <span id="loyaltyTokens">0</span></p>
+        <p>XP: <span id="xp">0</span></p>
+      </div>
+      <div id="rewards" class="tab-content">
+        <h2>Rewards</h2>
+        <ul id="rewardsList"></ul>
+      </div>
+      <div id="collectables" class="tab-content">
+        <h2>Collectables</h2>
+        <ul id="collectablesList"></ul>
+      </div>
+      <div id="ship-stats" class="tab-content">
+        <h2>Ship Stats</h2>
+        <p>Health: 100</p>
+        <p>Speed: 5</p>
+        <p>Laser Power: 1</p>
+      </div>
+      <div id="ship-appearance" class="tab-content">
+        <h2>Ship Appearance</h2>
+        <p>Color: Neon Green</p>
+        <p>Trail: Standard</p>
+      </div>
+      <div id="ship-weapons" class="tab-content">
+        <h2>Ship Weapons</h2>
+        <p>Laser: Basic (1 damage)</p>
+      </div>
+      <div id="how-to-play" class="tab-content">
+        <h2>How to Play</h2>
+        <p>Navigate your spaceship through the cosmos to explore and gather resources.</p>
+        <ul>
+          <li><strong>Move:</strong> Move your mouse or drag your finger to guide the ship.</li>
+          <li><strong>Shoot:</strong> Right-click or double-tap to fire lasers (red, 1 damage). Lasers auto-fire every 0.5s when not docked or menu open.</li>
+          <li><strong>Destroy Asteroids:</strong> Hit asteroids to spawn 3–5 reward squares (yellow: item, cyan: tokens, purple: materials, green: XP).</li>
+          <li><strong>Collect Rewards:</strong> Move over reward squares to collect them.</li>
+          <li><strong>Dock:</strong> Approach special particles (planets, space station) within 50px to dock, earning an item and 5 Loyalty Tokens. Move 100px away to undock.</li>
+          <li><strong>View Menu:</strong> Click/tap your ship when not docked to open the ship menu. Close by clicking the "Close" button or outside the menu.</li>
+          <li><strong>Explore Content:</strong> Click/tap special particles to view HorrorHouseGames content.</li>
+        </ul>
+      </div>
+      <div id="possible-rewards" class="tab-content">
+        <h2>Possible Rewards</h2>
+        <p>Collect rewards from asteroids and docking.</p>
+        <ul>
+          <li><strong>Common:</strong> Fuel Cell, Repair Kit (50% chance)</li>
+          <li><strong>Uncommon:</strong> Shield Booster, Speed Upgrade (30% chance)</li>
+          <li><strong>Rare:</strong> Laser Enhancer, Stealth Coating (15% chance)</li>
+          <li><strong>Epic:</strong> Quantum Drive, Red Glow Skin, Nebula Trail (5% chance)</li>
+          <li><strong>Resources:</strong> Space Tokens, Raw Materials, Loyalty Tokens, XP</li>
+        </ul>
+      </div>
+      <div id="leveling-system" class="tab-content">
+        <h2>Leveling System</h2>
+        <p>Gain XP to level up your profile.</p>
+        <ul>
+          <li><strong>XP Requirement:</strong> 100 XP per level (e.g., Level 1: 0–99 XP, Level 2: 100–199 XP).</li>
+          <li><strong>Earning XP:</strong> Collect green XP reward squares (10 XP each) from asteroids.</li>
+          <li><strong>Level Display:</strong> Check your current level in the Profile tab.</li>
+        </ul>
+      </div>
+    </div>
+    <button class="close" onclick="closeProfileMenu()">Close</button>
+  </div>
+  <script type="text/javascript">
+    // XLSX Processing Script
+    var gk_isXlsx = false;
+    var gk_xlsxFileLookup = {};
+    var gk_fileData = {};
+    function filledCell(cell) {
+      return cell !== '' && cell != null;
+    }
+    function loadFileData(filename) {
+      if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+        try {
+          var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+          var firstSheetName = workbook.SheetNames[0];
+          var worksheet = workbook.Sheets[firstSheetName];
+          var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+          var filteredData = jsonData.filter(row => row.some(filledCell));
+          var headerRowIndex = filteredData.findIndex((row, index) =>
+            row.filter(filledCell).length >= (filteredData[index + 1]?.filter(filledCell).length || 0)
+          );
+          if (headerRowIndex === -1 || headerRowIndex > 25) {
+            headerRowIndex = 0;
+          }
+          var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+          csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+          return csv;
+        } catch (e) {
+          console.error('Error processing XLSX file:', e);
+          return "";
+        }
+      }
+      return gk_fileData[filename] || "";
+    }
+
+    // Tab switching function
+    function showTab(tabId) {
+      document.querySelectorAll('.profile-menu .tab').forEach(tab => tab.classList.remove('active'));
+      document.querySelectorAll('.profile-menu .tab-content').forEach(content => content.classList.remove('active'));
+      document.querySelector(`.profile-menu .tab[onclick="showTab('${tabId}')"]`).classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    // Close profile menu function
+    function closeProfileMenu() {
+      profileMenu.style.display = 'none';
+      spaceship.isMenuOpen = false;
+      console.log('Closed profile menu');
+      console.log('Ship floating stopped');
+    }
+
+    // Canvas Animation Script
+    const canvas = document.getElementById('smokeCanvas');
+    const ctx = canvas.getContext('2d');
+    const tooltip = document.getElementById('tooltip');
+    const contentDiv = document.getElementById('content');
+    const profileMenu = document.getElementById('profileMenu');
+    const hud = document.getElementById('hud');
+    let particles = [];
+    let backgroundStars = [];
+    let asteroids = [];
+    let lasers = [];
+    let rewardSquares = [];
+    let trailParticles = [];
+    let explosionParticles = [];
+    let notifications = [];
+    let mouse = { x: null, y: null, radius: 100, prevX: null, prevY: null };
+    let spaceship = { x: null, y: null, size: 15, attachedParticle: null, angle: 0, targetAngle: 0, dockedX: null, dockedY: null, floatAngle: 0, isMenuOpen: false, speedX: 0, speedY: 0, startX: null, startY: null };
+    let playerInventory = { rewards: [], collectables: [], spaceTokens: 0, rawMaterials: 0, loyaltyTokens: 0, xp: 0 };
+    let lastTapTime = 0;
+    let doubleTapDelay = 300; // ms
+    let lastLaserTime = 0;
+    let laserCooldown = 200; // ms
+    let lastAutoFireTime = 0;
+    let autoFireInterval = 500; // ms
+
+    // Reward tiers
+    const rewardTiers = [
+      { tier: 'Common', items: ['Fuel Cell', 'Repair Kit'], probability: 0.5 },
+      { tier: 'Uncommon', items: ['Shield Booster', 'Speed Upgrade'], probability: 0.3 },
+      { tier: 'Rare', items: ['Laser Enhancer', 'Stealth Coating'], probability: 0.15 },
+      { tier: 'Epic', items: ['Quantum Drive', 'Red Glow Skin', 'Nebula Trail'], probability: 0.05 }
+    ];
+
+    // Set canvas size
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Celestial body types
+    const celestialTypes = [
+      {
+        type: 'planet',
+        title: 'About HHG',
+        description: 'Discover our mission to terrify and thrill.',
+        content: `
+          <h1>About HorrorHouseGames</h1>
+          <p>Founded in 2022 by DOMxHHG, HorrorHouseGames (HHG) specializes in horror-themed video games that push the boundaries of fear. Our team creates immersive, heart-pounding experiences.</p>
+          <ul>
+            <li><strong>Mission:</strong> To craft unforgettable horror adventures.</li>
+            <li><strong>Vision:</strong> To redefine fear in gaming.</li>
+            <li><strong>Team:</strong> 30+ creators specializing in horror and suspense.</li>
+          </ul>
+        `,
+        size: 10,
+        color: '#ff4d4d',
+        glow: 15
+      },
+      {
+        type: 'moon',
+        title: 'Our Games',
+        description: 'Explore our chilling game portfolio.',
+        content: `
+          <h1>Our Games</h1>
+          <p>Step into the darkness with our horror titles.</p>
+          <ul>
+            <li><strong>Shadow's End:</strong> A survival horror in a haunted asylum.</li>
+            <li><strong>Wraith's Call:</strong> A psychological thriller adventure.</li>
+            <li><strong>Bloodmoon Rising:</strong> A multiplayer horror experience.</li>
+          </ul>
+          <p><a href="https://horrorhousegames.studio/games" target="_blank">View Full Portfolio</a></p>
+        `,
+        size: 6,
+        color: '#b0b0b0',
+        glow: 10
+      },
+      {
+        type: 'sun',
+        title: 'Careers',
+        description: 'Join our team to create terrifying games.',
+        content: `
+          <h1>Join HorrorHouseGames</h1>
+          <p>We're seeking passionate creators to join our horror-obsessed team.</p>
+          <ul>
+            <li><strong>Open Roles:</strong> Level Designer, Animator, Sound Engineer</li>
+            <li><strong>Culture:</strong> Creative, intense, and collaborative</li>
+            <li><strong>Benefits:</strong> Competitive pay, horror-inspired workspace</li>
+          </ul>
+          <p><a href="https://horrorhousegames.studio/careers" target="_blank">Apply Now</a></p>
+        `,
+        size: 15,
+        color: '#ffaa33',
+        glow: 20
+      },
+      {
+        type: 'galaxy',
+        title: 'Contact Us',
+        description: 'Reach out to the HHG team.',
+        content: `
+          <h1>Contact HorrorHouseGames</h1>
+          <p>Have questions or feedback? Connect with us.</p>
+          <ul>
+            <li><strong>Email:</strong> contact@horrorhousegames.studio</li>
+            <li><strong>Phone:</strong> +1 (555) 666-7890</li>
+            <li><strong>Address:</strong> 13 Nightmare Lane, Dark City, CA</li>
+          </ul>
+          <p><a href="https://horrorhousegames.studio/contact" target="_blank">Contact Form</a></p>
+        `,
+        size: 12,
+        color: '#8a2be2',
+        glow: 18
+      },
+      {
+        type: 'station',
+        title: 'Space Station',
+        description: 'Dock to access ship systems.',
+        content: `
+          <h1>Space Station</h1>
+          <p>Dock at the Space Station to access your ship's systems and manage resources.</p>
+          <p>Click the ship menu to view your stats, rewards, and more.</p>
+        `,
+        size: 12,
+        color: '#00ffcc',
+        glow: 18
+      }
+    ];
+
+    // Background Star class
+    class BackgroundStar {
+      constructor() {
+        this.size = Math.random() * 1 + 0.5;
+        this.color = '#ffffff';
+        this.glow = 3;
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.startX = this.x;
+        this.startY = this.y;
+        this.speedX = Math.random() * 0.15 - 0.075;
+        this.speedY = Math.random() * 0.15 - 0.075;
+        this.opacity = Math.random() * 0.3 + 0.1;
+      }
+
+      update() {
+        const maxDistance = 50;
+        this.x += this.speedX;
+        this.y += this.speedY;
+
+        if (isNaN(this.x) || isNaN(this.y)) {
+          this.x = this.startX;
+          this.y = this.startY;
+        }
+
+        let dx = this.x - this.startX;
+        let dy = this.y - this.startY;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > maxDistance) {
+          const angle = Math.atan2(dy, dx);
+          this.x = this.startX + maxDistance * Math.cos(angle);
+          this.y = this.startY + maxDistance * Math.sin(angle);
+        }
+
+        if (this.x < -maxDistance) this.x += canvas.width + maxDistance;
+        if (this.x > canvas.width + maxDistance) this.x -= canvas.width + maxDistance;
+        if (this.y < -maxDistance) this.y += canvas.height + maxDistance;
+        if (this.y > canvas.height + maxDistance) this.y -= canvas.height + maxDistance;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = this.glow;
+        ctx.shadowColor = this.color;
+        ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Asteroid class
+    class Asteroid {
+      constructor() {
+        const types = [
+          { type: 'big', size: Math.random() * 5 + 10, speed: Math.random() * 0.5 + 0.5, health: 5, rewardTier: ['Common', 'Uncommon'], tokens: 5, materials: 10 },
+          { type: 'small', size: Math.random() * 2 + 3, speed: Math.random() * 1.5 + 1.5, health: 1, rewardTier: ['Uncommon', 'Rare'], tokens: 3, materials: 5 },
+          { type: 'shooting', size: Math.random() * 3 + 5, speed: Math.random() * 2 + 3, health: 3, rewardTier: ['Rare', 'Epic'], tokens: 10, materials: 15 }
+        ];
+        this.type = types[Math.floor(Math.random() * types.length)];
+        this.size = this.type.size;
+        this.health = this.type.health;
+        this.rewardTier = this.type.rewardTier;
+        this.tokens = this.type.tokens;
+        this.materials = this.type.materials;
+        this.color = '#8c8c8c';
+        this.glow = 5;
+        this.flashTime = 0;
+        this.flashDuration = 10;
+
+        // Spawn at random edge
+        const edge = Math.floor(Math.random() * 4);
+        let angle;
+        switch (edge) {
+          case 0: // Left
+            this.x = -this.size;
+            this.y = Math.random() * canvas.height;
+            angle = Math.random() * Math.PI - Math.PI / 2; // Toward right
+            break;
+          case 1: // Right
+            this.x = canvas.width + this.size;
+            this.y = Math.random() * canvas.height;
+            angle = Math.random() * Math.PI + Math.PI / 2; // Toward left
+            break;
+          case 2: // Top
+            this.x = Math.random() * canvas.width;
+            this.y = -this.size;
+            angle = Math.random() * Math.PI; // Toward bottom
+            break;
+          case 3: // Bottom
+            this.x = Math.random() * canvas.width;
+            this.y = canvas.height + this.size;
+            angle = Math.random() * Math.PI - Math.PI; // Toward top
+            break;
+        }
+        this.speedX = Math.cos(angle) * this.type.speed;
+        this.speedY = Math.sin(angle) * this.type.speed;
+      }
+
+      update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+
+        if (isNaN(this.x) || isNaN(this.y)) {
+          this.x = 0;
+          this.y = 0;
+        }
+
+        // Despawn if off-screen
+        if (this.x < -this.size || this.x > canvas.width + this.size ||
+            this.y < -this.size || this.y > canvas.height + this.size) {
+          return false;
+        }
+        return true;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = this.flashTime > 0 ? '#ff0000' : this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = this.glow;
+        ctx.shadowColor = this.flashTime > 0 ? '#ff0000' : this.color;
+        ctx.fillStyle = this.flashTime > 0 ? `rgba(255, 0, 0, 0.8)` : `rgba(140, 140, 140, 0.8)`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        if (this.flashTime > 0) this.flashTime--;
+        ctx.restore();
+      }
+
+      hit() {
+        this.health--;
+        this.flashTime = this.flashDuration;
+        console.log(`Asteroid hit! Health remaining: ${this.health}, flashing red`);
+        if (this.health <= 0) {
+          // Spawn explosion particles
+          for (let i = 0; i < 10; i++) {
+            explosionParticles.push(new ExplosionParticle(this.x, this.y));
+          }
+          // Spawn 3-5 reward squares with distinct rewards
+          const rewardTypes = this.type.type === 'small' ?
+            ['item', 'tokens', 'materials'] :
+            ['item', 'tokens', 'materials', 'xp', Math.random() < 0.5 ? 'item' : 'tokens'];
+          const rewardCount = Math.min(rewardTypes.length, Math.floor(Math.random() * 3) + 3);
+          const selectedRewards = rewardTypes.slice(0, rewardCount);
+          const rewardRoll = Math.random();
+          let tierIndex = 0;
+          let cumulativeProb = 0;
+          for (let i = 0; i < rewardTiers.length; i++) {
+            cumulativeProb += rewardTiers[i].probability;
+            if (rewardRoll < cumulativeProb && this.rewardTier.includes(rewardTiers[i].tier)) {
+              tierIndex = i;
+              break;
+            }
+          }
+          const items = rewardTiers[tierIndex].items;
+          const item = items[Math.floor(Math.random() * items.length)];
+          // Clear notifications at this position
+          notifications = notifications.filter(n => Math.abs(n.x - this.x) > 5 || Math.abs(n.y - this.y) > 5);
+          console.log(`Cleared notifications at (${this.x.toFixed(2)}, ${this.y.toFixed(2)})`);
+          selectedRewards.forEach((rewardType, index) => {
+            const angle = (index / selectedRewards.length) * Math.PI * 2;
+            const distance = Math.random() * 30 + 20;
+            const x = this.x + Math.cos(angle) * distance;
+            const y = this.y + Math.sin(angle) * distance;
+            let color;
+            let value = rewardType === 'item' ? item : this[rewardType] || 10; // XP = 10
+            switch (rewardType) {
+              case 'item': color = '#ffd700'; break; // Yellow
+              case 'tokens': color = '#00f0ff'; break; // Cyan
+              case 'materials': color = '#800080'; break; // Purple
+              case 'xp': color = '#00ff00'; break; // Green
+            }
+            rewardSquares.push(new RewardSquare(x, y, rewardType, value, color));
+            console.log(`Spawned reward square: ${rewardType} at (${x.toFixed(2)}, ${y.toFixed(2)}), color: ${color}`);
+          });
+        }
+        return this.health > 0;
+      }
+    }
+
+    // Laser class
+    class Laser {
+      constructor(x, y, angle) {
+        // Start laser at spaceship's front tip
+        this.x = x + Math.cos(angle - Math.PI / 2) * spaceship.size;
+        this.y = y + Math.sin(angle - Math.PI / 2) * spaceship.size;
+        this.speed = 10;
+        this.speedX = Math.cos(angle - Math.PI / 2) * this.speed;
+        this.speedY = Math.sin(angle - Math.PI / 2) * this.speed;
+        this.size = 2;
+        console.log(`Laser fired at (${this.x.toFixed(2)}, ${this.y.toFixed(2)}), angle: ${((angle - Math.PI / 2) * 180 / Math.PI).toFixed(2)}°`);
+      }
+
+      update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+
+        if (this.x < -this.size || this.x > canvas.width + this.size ||
+            this.y < -this.size || this.y > canvas.height + this.size) {
+          return false;
+        }
+        return true;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // RewardSquare class
+    class RewardSquare {
+      constructor(x, y, rewardType, value, color) {
+        this.x = x;
+        this.y = y;
+        this.rewardType = rewardType;
+        this.value = value;
+        this.color = color;
+        this.size = 5;
+        this.opacity = 1;
+      }
+
+      update() {
+        if (spaceship.x !== null && spaceship.y !== null) {
+          const dx = this.x - spaceship.x;
+          const dy = this.y - spaceship.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance < this.size + spaceship.size) {
+            if (this.rewardType === 'item') {
+              const existingReward = playerInventory.rewards.find(r => r.item === this.value);
+              if (existingReward) {
+                existingReward.count++;
+                console.log(`Collected reward: ${this.value} x${existingReward.count}`);
+                notifications.push(new Notification(this.x, this.y, `+${this.value} x1`));
+              } else {
+                playerInventory.rewards.push({ item: this.value, count: 1 });
+                console.log(`Collected reward: ${this.value} x1`);
+                notifications.push(new Notification(this.x, this.y, `+${this.value} x1`));
+              }
+            } else if (this.rewardType === 'tokens') {
+              playerInventory.spaceTokens += this.value;
+              console.log(`Collected reward: ${this.value} Space Tokens`);
+              notifications.push(new Notification(this.x, this.y, `+${this.value} Space Tokens`));
+            } else if (this.rewardType === 'materials') {
+              playerInventory.rawMaterials += this.value;
+              console.log(`Collected reward: ${this.value} Raw Materials`);
+              notifications.push(new Notification(this.x, this.y, `+${this.value} Raw Materials`));
+            } else if (this.rewardType === 'xp') {
+              playerInventory.xp += this.value;
+              console.log(`Collected reward: +${this.value} XP`);
+              notifications.push(new Notification(this.x, this.y, `+${this.value} XP`));
+            }
+            updateProfileMenu();
+            updateHUD();
+            return false;
+          }
+        }
+        return true;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = `rgba(${parseInt(this.color.slice(1, 3), 16)}, ${parseInt(this.color.slice(3, 5), 16)}, ${parseInt(this.color.slice(5, 7), 16)}, ${this.opacity})`;
+        ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+        ctx.restore();
+      }
+    }
+
+    // Explosion Particle class
+    class ExplosionParticle {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.size = Math.random() * 2 + 1;
+        this.opacity = 0.8;
+        this.speedX = Math.random() * 4 - 2;
+        this.speedY = Math.random() * 4 - 2;
+        this.time = 0;
+        this.maxTime = 30;
+      }
+
+      update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        this.time++;
+        this.opacity = Math.max(0, 0.8 - this.time / this.maxTime);
+        return this.time < this.maxTime;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = `rgba(255, 165, 0, ${this.opacity})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Notification class
+    class Notification {
+      constructor(x, y, text) {
+        this.x = x;
+        this.y = y;
+        const samePosNotifications = notifications.filter(n => Math.abs(n.x - x) < 5 && Math.abs(n.y - y) < 5);
+        this.yOffset = samePosNotifications.length * 20;
+        this.text = text;
+        this.opacity = 1;
+        this.time = 0;
+        this.maxTime = 180; // 3 seconds at 60fps
+      }
+
+      update() {
+        this.y -= 0.5;
+        this.time++;
+        this.opacity = Math.max(0, 1 - this.time / this.maxTime);
+        return this.time < this.maxTime;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.font = '16px Orbitron, monospace; letter-spacing: 1px';
+        ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+        ctx.textAlign = 'center';
+        ctx.fillText(this.text, this.x, this.y - this.yOffset);
+        ctx.restore();
+      }
+    }
+
+    // Particle class
+    class Particle {
+      constructor() {
+        if (Math.random() < 0.05 && celestialTypes.length > particles.filter(p => p.isSpecial).length) {
+          const type = celestialTypes[particles.filter(p => p.isSpecial).length];
+          this.isSpecial = true;
+          this.type = type.type;
+          this.title = type.title;
+          this.description = type.description;
+          this.content = type.content;
+          this.size = type.size;
+          this.color = type.color;
+          this.glow = type.glow;
+
+          const contentWidth = Math.min(800, window.innerWidth);
+          const contentHeight = Math.min(400, window.innerHeight);
+          const contentLeft = (window.innerWidth - contentWidth) / 2;
+          const contentRight = contentLeft + contentWidth;
+          const contentTop = (window.innerHeight - contentHeight) / 2;
+          const contentBottom = contentTop + contentHeight;
+          const margin = 50;
+          const minDistance = 100;
+
+          let attempts = 0;
+          const maxAttempts = 10;
+          do {
+            const side = Math.floor(Math.random() * 4);
+            switch (side) {
+              case 0:
+                this.x = contentLeft - margin - Math.random() * 50;
+                this.y = contentTop + Math.random() * contentHeight;
+                break;
+              case 1:
+                this.x = contentRight + margin + Math.random() * 50;
+                this.y = contentTop + Math.random() * contentHeight;
+                break;
+              case 2:
+                this.x = contentLeft + Math.random() * contentWidth;
+                this.y = contentTop - margin - Math.random() * 50;
+                break;
+              case 3:
+                this.x = contentLeft + Math.random() * contentWidth;
+                this.y = contentBottom + margin + Math.random() * 50;
+                break;
+            }
+            this.x = Math.max(this.size, Math.min(this.x, canvas.width - this.size));
+            this.y = Math.max(this.size, Math.min(this.y, canvas.height - this.size));
+            attempts++;
+          } while (particles.some(p => p.isSpecial && Math.sqrt((p.x - this.x) ** 2 + (p.y - this.y) ** 2) < minDistance) && attempts < maxAttempts);
+
+          this.startX = this.x;
+          this.startY = this.y;
+          this.opacity = 0.8;
+          this.isAttached = false;
+          this.floatAngle = Math.random() * Math.PI * 2;
+          console.log(`Spawned ${this.type === 'station' ? 'space station' : 'special particle'} ${this.title} at (${this.x.toFixed(2)}, ${this.y.toFixed(2)})`);
+        } else {
+          this.isSpecial = false;
+          this.type = 'star';
+          this.size = Math.random() * 2 + 1;
+          this.color = '#ffffff';
+          this.glow = 5;
+          this.x = Math.random() * canvas.width;
+          this.y = Math.random() * canvas.height;
+          this.startX = this.x;
+          this.startY = this.y;
+          this.speedX = Math.random() * 0.3 - 0.15;
+          this.speedY = Math.random() * 0.3 - 0.15;
+          this.opacity = Math.random() * 0.5 + 0.3;
+          this.isAttached = false;
+        }
+      }
+
+      update() {
+        if (this.isSpecial) {
+          const attractionDistance = 100;
+          particles.forEach(other => {
+            if (other !== this && other.isSpecial && !this.isAttached && !other.isAttached) {
+              const dx = other.x - this.x;
+              const dy = other.y - this.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              if (distance < attractionDistance && distance > 0) {
+                const force = (1 - distance / attractionDistance) * 0.1;
+                this.startX += dx * force;
+                this.startY += dy * force;
+                this.startX = Math.max(this.size, Math.min(this.startX, canvas.width - this.size));
+                this.startY = Math.max(this.size, Math.min(this.startY, canvas.height - this.size));
+              }
+            }
+          });
+
+          const maxFloatDistance = 5;
+          this.floatAngle += 0.05;
+          let baseX = this.isAttached ? spaceship.dockedX : this.startX;
+          let baseY = this.isAttached ? spaceship.dockedY : this.startY;
+          this.x = baseX + Math.cos(this.floatAngle) * maxFloatDistance;
+          this.y = baseY + Math.sin(this.floatAngle) * maxFloatDistance;
+
+          if (isNaN(this.x) || isNaN(this.y)) {
+            this.x = this.startX;
+            this.y = this.startY;
+            this.floatAngle = Math.random() * Math.PI * 2;
+          }
+
+          if (mouse.x !== null && mouse.y !== null) {
+            let dx = mouse.x - this.x;
+            let dy = mouse.y - this.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < this.size + 10) {
+              this.mouseDistance = distance;
+            } else {
+              this.mouseDistance = Infinity;
+            }
+          }
+
+          if (spaceship.x !== null && spaceship.y !== null && !spaceship.attachedParticle) {
+            let sdx = spaceship.x - this.x;
+            let sdy = spaceship.y - this.y;
+            let sDistance = Math.sqrt(sdx * sdx + sdy * sdy);
+            if (sDistance < 50 && !this.isAttached) {
+              this.isAttached = true;
+              spaceship.attachedParticle = this;
+              spaceship.dockedX = this.startX;
+              spaceship.dockedY = this.startY;
+              spaceship.floatAngle = this.floatAngle;
+              console.log(`Docked to ${this.title} at (${this.startX.toFixed(2)}, ${this.startY.toFixed(2)})`);
+              // Award docking rewards
+              const rewardRoll = Math.random();
+              let tierIndex = 0;
+              let cumulativeProb = 0;
+              for (let i = 0; i < rewardTiers.length; i++) {
+                cumulativeProb += rewardTiers[i].probability;
+                if (rewardRoll < cumulativeProb) {
+                  tierIndex = i;
+                  break;
+                }
+              }
+              const items = rewardTiers[tierIndex].items;
+              const item = items[Math.floor(Math.random() * items.length)];
+              const loyaltyTokens = 5;
+              // Clear notifications at this position
+              notifications = notifications.filter(n => Math.abs(n.x - this.x) > 5 || Math.abs(n.y - this.y) > 5);
+              console.log(`Cleared notifications at (${this.x.toFixed(2)}, ${this.y.toFixed(2)})`);
+              const existingReward = playerInventory.rewards.find(r => r.item === item);
+              if (existingReward) {
+                existingReward.count++;
+                console.log(`Docking reward: ${item} x${existingReward.count}`);
+                notifications.push(new Notification(this.x, this.y, `+${item} x1`));
+              } else {
+                playerInventory.rewards.push({ item, count: 1 });
+                console.log(`Docking reward: ${item} x1`);
+                notifications.push(new Notification(this.x, this.y, `+${item} x1`));
+              }
+              playerInventory.loyaltyTokens += loyaltyTokens;
+              console.log(`Docking awarded ${loyaltyTokens} Loyalty Tokens`);
+              notifications.push(new Notification(this.x, this.y, `+${loyaltyTokens} Loyalty Tokens`));
+              updateProfileMenu();
+              updateHUD();
+            }
+          }
+
+          if (this.isAttached && mouse.x !== null && mouse.y !== null) {
+            let sdx = mouse.x - spaceship.dockedX;
+            let sdy = mouse.y - spaceship.dockedY;
+            let sDistance = Math.sqrt(sdx * sdx + sdy * sdy);
+            if (sDistance > 100) {
+              this.isAttached = false;
+              spaceship.attachedParticle = null;
+              spaceship.dockedX = null;
+              spaceship.dockedY = null;
+              this.floatAngle = Math.random() * Math.PI * 2;
+              console.log('Undocked');
+            }
+          }
+          return;
+        }
+
+        const maxDistance = 50;
+        this.x += this.speedX;
+        this.y += this.speedY;
+
+        if (isNaN(this.x) || isNaN(this.y)) {
+          this.x = this.startX;
+          this.y = this.startY;
+        }
+
+        let dx = this.x - this.startX;
+        let dy = this.y - this.startY;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > maxDistance) {
+          const angle = Math.atan2(dy, dx);
+          this.x = this.startX + maxDistance * Math.cos(angle);
+          this.y = this.startY + maxDistance * Math.sin(angle);
+        }
+
+        if (mouse.x !== null && mouse.y !== null) {
+          let dxMouse = mouse.x - this.x;
+          let dyMouse = mouse.y - this.y;
+          let distanceMouse = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
+          if (distanceMouse < mouse.radius) {
+            let force = (mouse.radius - distanceMouse) / mouse.radius;
+            this.x -= dxMouse * force * 0.1;
+            this.y -= dyMouse * force * 0.1;
+            this.opacity = Math.min(this.opacity + 0.01, 0.8);
+            dx = this.x - this.startX;
+            dy = this.y - this.startY;
+            distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > maxDistance) {
+              const angle = Math.atan2(dy, dx);
+              this.x = this.startX + maxDistance * Math.cos(angle);
+              this.y = this.startY + maxDistance * Math.sin(angle);
+            }
+          } else {
+            this.opacity = Math.max(this.opacity - 0.005, 0.3);
+          }
+        }
+
+        if (!this.isAttached) {
+          if (this.x < -maxDistance) this.x += canvas.width + maxDistance;
+          if (this.x > canvas.width + maxDistance) this.x -= canvas.width + maxDistance;
+          if (this.y < -maxDistance) this.y += canvas.height + maxDistance;
+          if (this.y > canvas.height + maxDistance) this.y -= canvas.height + maxDistance;
+        }
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = this.glow;
+        ctx.shadowColor = this.color;
+        ctx.fillStyle = `rgba(${parseInt(this.color.slice(1, 3), 16)}, ${parseInt(this.color.slice(3, 5), 16)}, ${parseInt(this.color.slice(5, 7), 16)}, ${this.opacity})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Trail Particle class
+    class TrailParticle {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.size = Math.random() * 2 + 1;
+        this.opacity = 0.8;
+        this.color = '#00ff99';
+      }
+
+      update() {
+        this.opacity -= 0.02;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = `rgba(0, 255, 153, ${this.opacity})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Spaceship drawing with rotation
+    function drawSpaceship() {
+      if (spaceship.x !== null && spaceship.y !== null && !isNaN(spaceship.x) && !isNaN(spaceship.y)) {
+        ctx.save();
+        ctx.translate(spaceship.x, spaceship.y);
+        ctx.rotate(spaceship.angle);
+        ctx.fillStyle = '#00ff99';
+        ctx.beginPath();
+        ctx.moveTo(0, -spaceship.size);
+        ctx.lineTo(-spaceship.size, spaceship.size);
+        ctx.lineTo(spaceship.size, spaceship.size);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#00ff99';
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Update profile menu
+    function updateProfileMenu() {
+      const rewardsList = document.getElementById('rewardsList');
+      rewardsList.innerHTML = playerInventory.rewards.map(r => `<li>${r.item} x${r.count}</li>`).join('');
+      const collectablesList = document.getElementById('collectablesList');
+      collectablesList.innerHTML = playerInventory.collectables.map(item => `<li>${item}</li>`).join('');
+      document.getElementById('spaceTokens').textContent = playerInventory.spaceTokens;
+      document.getElementById('rawMaterials').textContent = playerInventory.rawMaterials;
+      document.getElementById('loyaltyTokens').textContent = playerInventory.loyaltyTokens;
+      document.getElementById('xp').textContent = playerInventory.xp;
+      document.getElementById('playerLevel').textContent = Math.floor(playerInventory.xp / 100) + 1;
+    }
+
+    // Update HUD
+    function updateHUD() {
+      hud.textContent = `Space Tokens: ${playerInventory.spaceTokens} | Raw Materials: ${playerInventory.rawMaterials} | Loyalty Tokens: ${playerInventory.loyaltyTokens} | XP: ${playerInventory.xp}`;
+    }
+
+    // Initialize particles, asteroids, etc.
+    function init() {
+      particles = [];
+      backgroundStars = [];
+      asteroids = [];
+      lasers = [];
+      rewardSquares = [];
+      trailParticles = [];
+      explosionParticles = [];
+      notifications = [];
+      const particleCount = Math.floor((canvas.width * canvas.height) / 10000);
+      for (let i = 0; i < particleCount; i++) {
+        particles.push(new Particle());
+      }
+      for (let i = 0; i < particleCount * 2; i++) {
+        backgroundStars.push(new BackgroundStar());
+      }
+      for (let i = 0; i < 8; i++) {
+        asteroids.push(new Asteroid());
+      }
+    }
+    init();
+
+    // Update spaceship position and rotation
+    function updateSpaceship(x, y) {
+      if (spaceship.x === null || spaceship.y === null || isNaN(spaceship.x) || isNaN(spaceship.y)) {
+        spaceship.x = x;
+        spaceship.y = y;
+        spaceship.startX = x;
+        spaceship.startY = y;
+        mouse.prevX = x;
+        mouse.prevY = y;
+      }
+
+      if (spaceship.attachedParticle) {
+        spaceship.floatAngle += 0.05;
+        spaceship.x = spaceship.dockedX + 20 + Math.cos(spaceship.floatAngle) * 5;
+        spaceship.y = spaceship.dockedY + Math.sin(spaceship.floatAngle) * 5;
+        return;
+      }
+
+      if (spaceship.isMenuOpen) {
+        // Float randomly
+        if (spaceship.speedX === 0 && spaceship.speedY === 0) {
+          spaceship.speedX = Math.random() * 0.3 + 0.3;
+          spaceship.speedY = Math.random() * 0.3 + 0.3;
+          console.log('Ship floating started');
+        }
+        spaceship.x += spaceship.speedX;
+        spaceship.y += spaceship.speedY;
+        const maxDistance = 50;
+        let dx = spaceship.x - spaceship.startX;
+        let dy = spaceship.y - spaceship.startY;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > maxDistance) {
+          const angle = Math.atan2(dy, dx);
+          spaceship.x = spaceship.startX + maxDistance * Math.cos(angle);
+          spaceship.y = spaceship.startY + maxDistance * Math.sin(angle);
+        }
+        // Add trail
+        trailParticles.push(new TrailParticle(spaceship.x, spaceship.y));
+        return;
+      }
+
+      if (mouse.prevX !== null && mouse.prevY !== null) {
+        const dx = x - mouse.prevX;
+        const dy = y - mouse.prevY;
+        spaceship.targetAngle = Math.atan2(dy, dx) + Math.PI / 2;
+        const lerpFactor = 0.1;
+        const angleDiff = ((spaceship.targetAngle - spaceship.angle + Math.PI) % (2 * Math.PI)) - Math.PI;
+        spaceship.angle += angleDiff * lerpFactor;
+        console.log(`Spaceship angle: ${(spaceship.angle * 180 / Math.PI).toFixed(2)}°`);
+      }
+
+      let newX = x;
+      let newY = y;
+      particles.forEach(particle => {
+        if (particle.isSpecial) {
+          const dx = x - particle.x;
+          const dy = y - particle.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const minDistance = particle.size + spaceship.size + 5;
+          if (distance < minDistance) {
+            const angle = Math.atan2(dy, dx);
+            newX = particle.x + minDistance * Math.cos(angle);
+            newY = particle.y + minDistance * Math.sin(angle);
+          }
+        }
+      });
+
+      if (newX !== spaceship.x || newY !== spaceship.y) {
+        trailParticles.push(new TrailParticle(newX, newY));
+      }
+
+      spaceship.x = newX;
+      spaceship.y = newY;
+      spaceship.startX = newX;
+      spaceship.startY = newY;
+      mouse.prevX = x;
+      mouse.prevY = y;
+
+      trailParticles = trailParticles.filter(p => p.opacity > 0);
+      trailParticles.forEach(p => {
+        p.update();
+        p.draw();
+      });
+    }
+
+    // Animation loop
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Auto-fire lasers every 500ms
+      const currentTime = Date.now();
+      if (!spaceship.attachedParticle && !spaceship.isMenuOpen && spaceship.x !== null && spaceship.y !== null && currentTime - lastAutoFireTime > autoFireInterval) {
+        console.log('Firing laser (auto-fire) from front tip');
+        lasers.push(new Laser(spaceship.x, spaceship.y, spaceship.angle));
+        lastAutoFireTime = currentTime;
+      }
+
+      // Spawn new asteroids if below threshold
+      if (asteroids.length < 8) {
+        asteroids.push(new Asteroid());
+      }
+
+      backgroundStars.forEach(star => {
+        star.update();
+        star.draw();
+      });
+
+      asteroids = asteroids.filter(asteroid => asteroid.update());
+      asteroids.forEach(asteroid => asteroid.draw());
+
+      // Handle laser collisions
+      lasers = lasers.filter(laser => {
+        laser.update();
+        let keepLaser = true;
+        asteroids = asteroids.filter(asteroid => {
+          const dx = laser.x - asteroid.x;
+          const dy = laser.y - asteroid.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance < laser.size + asteroid.size) {
+            console.log(`Laser hit asteroid at (${asteroid.x}, ${asteroid.y})`);
+            keepLaser = false;
+            return asteroid.hit();
+          }
+          return true;
+        });
+        if (keepLaser) laser.draw();
+        return keepLaser && laser.update();
+      });
+
+      rewardSquares = rewardSquares.filter(reward => reward.update());
+      rewardSquares.forEach(reward => reward.draw());
+
+      explosionParticles = explosionParticles.filter(p => p.update());
+      explosionParticles.forEach(p => p.draw());
+
+      notifications = notifications.filter(notification => notification.update());
+      notifications.forEach(notification => notification.draw());
+
+      let closestParticle = null;
+      let minDistance = Infinity;
+      particles.forEach(particle => {
+        if (particle.isSpecial) {
+          const dx = particle.x - spaceship.x;
+          const dy = particle.y - spaceship.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance < 100 && !particle.isAttached && distance < minDistance) {
+            minDistance = distance;
+            closestParticle = particle;
+          }
+          if (mouse.x !== null && mouse.y !== null) {
+            let mdx = mouse.x - particle.x;
+            let mdy = mouse.y - particle.y;
+            let mDistance = Math.sqrt(mdx * mdx + mdy * mdy);
+            particle.mouseDistance = mDistance < particle.size + 10 ? mDistance : Infinity;
+          }
+        }
+      });
+      if (closestParticle) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(spaceship.x, spaceship.y);
+        ctx.lineTo(closestParticle.x, closestParticle.y);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.font = '16px Orbitron, monospace';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(closestParticle.title, closestParticle.x, closestParticle.y - closestParticle.size - 12);
+        ctx.restore();
+      }
+
+      // Handle tooltips
+      if (spaceship.attachedParticle) {
+        // Static tooltip for docked particle
+        const particle = spaceship.attachedParticle;
+        tooltip.style.display = 'block';
+        tooltip.style.left = `${particle.x}px`;
+        tooltip.style.top = `${particle.y + particle.size + 20}px`;
+        tooltip.innerHTML = `<strong>${particle.title}</strong><br>${particle.description}`;
+        console.log(`Showing static tooltip for ${particle.title}`);
+      } else {
+        let closestTooltip = null;
+        let minTooltipDistance = Infinity;
+        particles.forEach(particle => {
+          if (particle.isSpecial && particle.mouseDistance < minTooltipDistance) {
+            minTooltipDistance = particle.mouseDistance;
+            closestTooltip = particle;
+          }
+        });
+        if (closestTooltip && minTooltipDistance !== Infinity) {
+          tooltip.style.display = 'block';
+          tooltip.style.left = `${mouse.x + 15}px`;
+          tooltip.style.top = `${mouse.y + 15}px`;
+          tooltip.innerHTML = `<strong>${closestTooltip.title}</strong><br>${closestTooltip.description}`;
+        } else {
+          tooltip.style.display = 'none';
+        }
+      }
+
+      particles.forEach(particle => {
+        particle.update();
+        particle.draw();
+      });
+      trailParticles.forEach(p => {
+        p.update();
+        p.draw();
+      });
+      drawSpaceship();
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // Mouse interaction
+    window.addEventListener('mousemove', (event) => {
+      mouse.x = event.clientX;
+      mouse.y = event.clientY;
+      if (!spaceship.isMenuOpen) {
+        updateSpaceship(mouse.x, mouse.y);
+      }
+    });
+
+    // Prevent default context menu
+    canvas.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+    });
+
+    // Click interaction
+    canvas.addEventListener('click', (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const currentTime = Date.now();
+
+      // Right-click to shoot laser
+      if (event.button === 2 && !spaceship.attachedParticle && !spaceship.isMenuOpen && spaceship.x !== null && spaceship.y !== null && currentTime - lastLaserTime > laserCooldown) {
+        console.log('Firing laser (right-click) from front tip');
+        lasers.push(new Laser(spaceship.x, spaceship.y, spaceship.angle));
+        lastLaserTime = currentTime;
+        return;
+      }
+
+      // Left-click for spaceship or special particle
+      if (event.button === 0) {
+        if (spaceship.x !== null && spaceship.y !== null && !spaceship.attachedParticle) {
+          const dx = x - spaceship.x;
+          const dy = y - spaceship.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance < spaceship.size) {
+            console.log('Opening profile menu centered on screen');
+            profileMenu.style.display = 'block';
+            spaceship.isMenuOpen = true;
+            return;
+          }
+        }
+
+        let nearSpecial = false;
+        particles.forEach(particle => {
+          if (particle.isSpecial) {
+            let dx = x - particle.x;
+            let dy = y - particle.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < particle.size + 10) {
+              console.log(`Loading content for ${particle.title}`);
+              nearSpecial = true;
+              contentDiv.classList.remove('fade-in');
+              contentDiv.classList.add('fade-out');
+              setTimeout(() => {
+                contentDiv.innerHTML = particle.content;
+                contentDiv.classList.remove('fade-out');
+                contentDiv.classList.add('fade-in');
+              }, 300);
+            }
+          }
+        });
+      }
+    });
+
+    // Touch interaction for mobile
+    window.addEventListener('touchmove', (event) => {
+      if (event.target === canvas) {
+        event.preventDefault();
+      }
+      mouse.x = event.touches[0].clientX;
+      mouse.y = event.touches[0].clientY;
+      if (!spaceship.isMenuOpen) {
+        updateSpaceship(mouse.x, mouse.y);
+      }
+    });
+
+    // Touch click with double-tap for shooting
+    canvas.addEventListener('touchstart', (event) => {
+      if (event.target === canvas) {
+        event.preventDefault();
+      }
+      const rect = canvas.getBoundingClientRect();
+      const x = event.touches[0].clientX - rect.left;
+      const y = event.touches[0].clientY - rect.top;
+      const currentTime = Date.now();
+
+      // Double-tap to shoot laser
+      if (currentTime - lastTapTime < doubleTapDelay && !spaceship.attachedParticle && !spaceship.isMenuOpen && spaceship.x !== null && spaceship.y !== null && currentTime - lastLaserTime > laserCooldown) {
+        console.log('Firing laser (double-tap) from front tip');
+        lasers.push(new Laser(spaceship.x, spaceship.y, spaceship.angle));
+        lastLaserTime = currentTime;
+        lastTapTime = 0;
+        return;
+      }
+
+      lastTapTime = currentTime;
+
+      // Single-tap for spaceship or special particle
+      if (spaceship.x !== null && spaceship.y !== null && !spaceship.attachedParticle) {
+        const dx = x - spaceship.x;
+        const dy = y - spaceship.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < spaceship.size) {
+          console.log('Opening profile menu centered on screen (touch)');
+          profileMenu.style.display = 'block';
+          spaceship.isMenuOpen = true;
+          return;
+        }
+      }
+
+      let nearSpecial = false;
+      particles.forEach(particle => {
+        if (particle.isSpecial) {
+          let dx = x - particle.x;
+          let dy = y - particle.y;
+          let distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance < particle.size + 10) {
+            console.log(`Loading content for ${particle.title} (touch)`);
+            nearSpecial = true;
+            contentDiv.classList.remove('fade-in');
+            contentDiv.classList.add('fade-out');
+            setTimeout(() => {
+              contentDiv.innerHTML = particle.content;
+              contentDiv.classList.remove('fade-out');
+              contentDiv.classList.add('fade-in');
+            }, 300);
+          }
+        }
+      });
+    });
+
+    // Close profile menu on click outside (skip when docked)
+    window.addEventListener('click', (event) => {
+      if (profileMenu.style.display === 'block' && !spaceship.attachedParticle && !profileMenu.contains(event.target) &&
+          !(spaceship.x && Math.sqrt((event.clientX - spaceship.x) ** 2 + (event.clientY - spaceship.y) ** 2) < spaceship.size)) {
+        closeProfileMenu();
+      }
+    });
+
+    // Reset mouse position
+    window.addEventListener('mouseout', () => {
+      mouse.x = null;
+      mouse.y = null;
+      mouse.prevX = null;
+      mouse.prevY = null;
+      if (!spaceship.isMenuOpen && !spaceship.attachedParticle) {
+        spaceship.x = null;
+        spaceship.y = null;
+        spaceship.dockedX = null;
+        spaceship.dockedY = null;
+        spaceship.startX = null;
+        spaceship.startY = null;
+        spaceship.angle = 0;
+        spaceship.targetAngle = 0;
+        spaceship.floatAngle = 0;
+        tooltip.style.display = 'none';
+        profileMenu.style.display = 'none';
+      }
+    });
+    window.addEventListener('touchend', () => {
+      mouse.x = null;
+      mouse.y = null;
+      mouse.prevX = null;
+      mouse.prevY = null;
+      if (!spaceship.isMenuOpen && !spaceship.attachedParticle) {
+        spaceship.x = null;
+        spaceship.y = null;
+        spaceship.dockedX = null;
+        spaceship.dockedY = null;
+        spaceship.startX = null;
+        spaceship.startY = null;
+        spaceship.angle = 0;
+        spaceship.targetAngle = 0;
+        spaceship.floatAngle = 0;
+        tooltip.style.display = 'none';
+        profileMenu.style.display = 'none';
+      }
+    });
+
+    // Reinitialize on resize
+    window.addEventListener('resize', init);
+  </script>
+</body>
+</html>
